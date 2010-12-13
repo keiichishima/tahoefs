@@ -22,10 +22,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _INET_STUB_H_
-#define _INET_STUB_H_
+#ifndef _HTTP_STUB_H_
+#define _HTTP_STUB_H_
 
-int istub_connect(const char *, const char *);
-void istub_disconnect(int);
+int http_stub_init(void);
+int http_stub_getattr(const char *, struct stat *stbuf);
 
-#endif /* _INET_STUB_H_ */
+
+#endif

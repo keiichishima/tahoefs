@@ -22,30 +22,23 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define FUSE_USE_VERSION 26
-
-#include <fuse.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
+#include <err.h>
 #include <unistd.h>
 #include <sys/types.h>
 
-#define ROOT_CAP "URI:DIR2:wvttaywiquk5wrofckf4cndppe:zckelfnl24mg55a7rpbrflaomd7brdkpf74uokdxrmvsxwdne5pa"
+#define FUSE_USE_VERSION 26
+#include <fuse.h>
+
+#include "http_stub.h"
 
 static int tahoe_getattr(const char *path, struct stat *stbuf)
 {
-	if(strcmp(path, "/") != 0)
-		return -ENOENT;
 
-	stbuf->st_mode = S_IFREG | 0644;
-	stbuf->st_nlink = 1;
-	stbuf->st_uid = getuid();
-	stbuf->st_gid = getgid();
-	stbuf->st_size = (1ULL << 32); /* 4G */
-	stbuf->st_blocks = 0;
-	stbuf->st_atime = stbuf->st_mtime = stbuf->st_ctime = time(NULL);
-
-	return 0;
+  return (http_stub_getattr(path, stbuf));
 }
 
 static int tahoe_truncate(const char *path, off_t size)
@@ -107,5 +100,10 @@ static struct fuse_operations tahoe_oper = {
 
 int main(int argc, char *argv[])
 {
-	return fuse_main(argc, argv, &tahoe_oper, NULL);
+
+  if (http_stub_init() == -1) {
+    errx(EXIT_FAILURE, "failed to initialize http_stub module.");
+  }
+
+  return fuse_main(argc, argv, &tahoe_oper, NULL);
 }

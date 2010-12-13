@@ -1,8 +1,13 @@
-CFLAGS	= -Wall -g -DDEBUG -D_FILE_OFFSET_BITS=64
+CFLAGS	= -Wall -g -DDEBUG
+CFLAGS	+= $(shell pkg-config fuse --cflags)
+CFLAGS	+= $(shell pkg-config json --cflags)
+LDFLAGS	+= $(shell curl-config --cflags)
 LDFLAGS	= $(shell pkg-config fuse --libs)
+LDFLAGS	+= $(shell curl-config --libs)
+LDFLAGS	+= $(shell pkg-config json --libs)
 
 targets	= tahoefs
-objs	= tahoefs.o inet_stub.o http_stub.o
+objs	= tahoefs.o http_stub.o
 
 all: $(targets)
 
