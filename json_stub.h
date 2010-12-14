@@ -22,12 +22,9 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _HTTP_STUB_H_
-#define _HTTP_STUB_H_
+#ifndef _JSON_STUB_H_
+#define _JSON_STUB_H_
 
-int http_stub_initialize(void);
-int http_stub_terminate(void);
-int http_stub_get_info(const char *, char **, size_t *);
-
+int json_stub_json_to_metadata(const char *, struct tahoefs_metadata *);
 
 #endif

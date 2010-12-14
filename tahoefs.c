@@ -23,42 +23,82 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <math.h>
 #include <errno.h>
 #include <assert.h>
 #include <err.h>
-#include <unistd.h>
-#include <sys/types.h>
 
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
 
+#include "tahoefs.h"
 #include "http_stub.h"
+#include "json_stub.h"
 
-static int tahoe_getattr(const char *path, struct stat *stbuf)
+static int tahoe_getattr(const char *path, struct stat *stbufp)
 {
+  char *infop = NULL;
+  size_t info_size;
+  if (http_stub_get_info(path, &infop, &info_size) == -1) {
+    warnx("failed to get node information of %s.", path);
+    return (-ENOENT);
+  }
 
-  return (http_stub_getattr(path, stbuf));
-}
+  /* convert the JSON data to tahoefs metadata. */
+  struct tahoefs_metadata metadata;
+  memset(&metadata, 0, sizeof (struct tahoefs_metadata));
+  if (json_stub_json_to_metadata(infop, &metadata) == -1) {
+    warnx("failed to convert JSON data to tahoefs metadata.");
+    return (-ENOENT);
+  }
 
-static int tahoe_truncate(const char *path, off_t size)
-{
-	(void) size;
+  /* free the memory which keeps the HTTP response body. */
+  free(infop);
 
-	if(strcmp(path, "/") != 0)
-		return -ENOENT;
+  switch (metadata.type) {
+  case TAHOEFS_METADATA_TYPE_DIRNODE:
+    stbufp->st_mode = S_IFDIR | 0700;
+    /* XXX we have no idea about the directory size. */
+    stbufp->st_size = 4096;
+    break;
+  case TAHOEFS_METADATA_TYPE_FILENODE:
+    stbufp->st_mode = S_IFREG | 0600;
+    stbufp->st_size = metadata.size;
+    break;
+  default:
+    warnx("unknown tahoefs node type %d.");
+    return (-ENOENT);
+  }
 
-	return 0;
+  /* # of hard links. */
+  stbufp->st_nlink = 1;
+
+  /* uid and gid. */
+  stbufp->st_uid = getuid();
+  stbufp->st_gid = getgid();
+
+  /* # of 512B blocks allocated.  does it make any sense to set it? */
+  stbufp->st_blocks = 0;
+
+  /* timestamps. */
+  stbufp->st_ctime = stbufp->st_atime = stbufp->st_mtime
+    = metadata.link_modification_time;
+
+  return (0);
 }
 
 static int tahoe_open(const char *path, struct fuse_file_info *fi)
 {
-	(void) fi;
+  (void) fi;
 
-	if(strcmp(path, "/") != 0)
-		return -ENOENT;
+  if(strcmp(path, "/") != 0)
+    return -ENOENT;
 
-	return 0;
+  return 0;
 }
 
 static int tahoe_read(const char *path, char *buf, size_t size,
@@ -77,33 +117,51 @@ static int tahoe_read(const char *path, char *buf, size_t size,
 	return size;
 }
 
-static int tahoe_write(const char *path, const char *buf, size_t size,
-		       off_t offset, struct fuse_file_info *fi)
+static int
+tahoe_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+	      off_t offset, struct fuse_file_info *fi)
 {
-	(void) buf;
-	(void) offset;
-	(void) fi;
+  char *infop = NULL;
+  size_t info_size;
+  if (http_stub_get_info(path, &infop, &info_size) == -1) {
+    warnx("failed to get dirnode information of %s.", path);
+    return (-ENOENT);
+  }
 
-	if(strcmp(path, "/") != 0)
-		return -ENOENT;
+  return (-ENOENT);
+}
 
-	return size;
+static void *
+tahoe_init(struct fuse_conn_info *conn)
+{
+
+  if (http_stub_initialize() == -1) {
+    errx(EXIT_FAILURE, "failed to initialize the http_stub module.");
+  }
+
+  return (NULL);
+}
+
+static void
+tahoe_destroy(void *dummy)
+{
+
+  if (http_stub_terminate() == -1) {
+    errx(EXIT_FAILURE, "failed to teminate the http_stub module.");
+  }
 }
 
 static struct fuse_operations tahoe_oper = {
-	.getattr	= tahoe_getattr,
-	.truncate	= tahoe_truncate,
-	.open		= tahoe_open,
-	.read		= tahoe_read,
-	.write		= tahoe_write,
+  .init		= tahoe_init,
+  .destroy	= tahoe_destroy,
+  .getattr	= tahoe_getattr,
+  .open		= tahoe_open,
+  .read		= tahoe_read,
+  .readdir	= tahoe_readdir,
 };
 
 int main(int argc, char *argv[])
 {
-
-  if (http_stub_init() == -1) {
-    errx(EXIT_FAILURE, "failed to initialize http_stub module.");
-  }
 
   return fuse_main(argc, argv, &tahoe_oper, NULL);
 }

@@ -22,12 +22,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _HTTP_STUB_H_
-#define _HTTP_STUB_H_
+#ifndef _TAHOEFS_H_
+#define _TAHOEFS_H_
 
-int http_stub_initialize(void);
-int http_stub_terminate(void);
-int http_stub_get_info(const char *, char **, size_t *);
+#define TAHOEFS_METADATA_TYPE_UNKNOWN	0
+#define TAHOEFS_METADATA_TYPE_DIRNODE	1
+#define TAHOEFS_METADATA_TYPE_FILENODE	2
 
+struct tahoefs_metadata {
+  int type;
+  size_t size;
+  time_t link_creation_time;
+  time_t link_modification_time;
+};
 
 #endif
+
