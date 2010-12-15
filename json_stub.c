@@ -31,12 +31,13 @@
 #include <sys/time.h>
 
 #include <json.h>
+#include <json_object_private.h>
 
 #include "tahoefs.h"
+#include "json_stub.h"
 
 int
-json_stub_json_to_metadata(const char *json,
-			   struct tahoefs_metadata *metadatap)
+json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
 {
   assert(json != NULL);
   assert(metadatap != NULL);
@@ -87,7 +88,7 @@ json_stub_json_to_metadata(const char *json,
   printf("%s\n", json_object_to_json_string(jfileinfop));
 #endif
 
-  /* metadata and metadata_tahoe exist only in filenode. */
+  /* "metadata" and "metadata":{"tahoe"} exist only in filenode. */
   struct json_object *jmetap = NULL;
   struct json_object *jmeta_tahoep = NULL;
   jmetap = json_object_object_get(jfileinfop, "metadata");
@@ -95,15 +96,43 @@ json_stub_json_to_metadata(const char *json,
     jmeta_tahoep = json_object_object_get(jmetap, "tahoe");
   }
 
+  /* "size" key. */
   struct json_object *jsizep;
   jsizep = json_object_object_get(jfileinfop, "size");
   if (jsizep) {
     metadatap->size = json_object_get_int(jsizep);
   } else {
-    /* unknown, maybe directory. */
+    /* unknown. maybe directory. */
     metadatap->size = 0;
   }
 
+  /* uri keys. */
+  struct json_object *jurip;
+  jurip = json_object_object_get(jfileinfop, "ro_uri");
+  if (jurip == NULL) {
+    warnx("no ro_uri key exist.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+  strncpy(metadatap->ro_uri, json_object_get_string(jurip),
+	  TAHOEFS_CAPABILITY_SIZE);
+
+  jurip = json_object_object_get(jfileinfop, "verify_uri");
+  if (jurip == NULL) {
+    warnx("no verify_uri key exist.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+  strncpy(metadatap->verify_uri, json_object_get_string(jurip),
+	  TAHOEFS_CAPABILITY_SIZE);
+
+  jurip = json_object_object_get(jfileinfop, "rw_uri");
+  if (jurip) {
+    strncpy(metadatap->verify_uri, json_object_get_string(jurip),
+	    TAHOEFS_CAPABILITY_SIZE);
+  }
+
+  /* "linkcrtime" and "linkmotime" keys. */
   if (jmeta_tahoep) {
     double time;
     struct json_object *jtimep;
@@ -117,6 +146,78 @@ json_stub_json_to_metadata(const char *json,
   }
 
   /* release the parsed JSON structure. */
+  json_object_put(jnodeinfop);
+
+  return (0);
+}
+
+int
+json_stub_iterate_children(void *buf, void *fillerp, const char *json,
+			   json_stub_iterate_children_callback_t callback)
+{
+  assert(json != NULL);
+  assert(callback != NULL);
+
+  /* parse the dirnode information. */
+  struct json_object *jnodeinfop;
+  jnodeinfop = json_tokener_parse(json);
+  if (jnodeinfop == NULL) {
+    warnx("failed to parse the dirnode information in JSON format.");
+    return (-1);
+  }
+
+  /* the first entry of jnodeinfop always specifies nodetype. */
+  struct json_object *jnodetypep;
+  jnodetypep = json_object_array_get_idx(jnodeinfop, 0);
+  if (jnodetypep == NULL) {
+    warnx("no node type information exists.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+  const char *nodetype;
+  nodetype = json_object_get_string(jnodetypep);
+  if (nodetype == NULL) {
+    warnx("failed to convert JSON string to string.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+  if (strcmp(nodetype, "dirnode") != 0) {
+    warnx("this is not a dirnode.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+
+  /* the second entry of jnodeinfop contains node specific data. */
+  struct json_object *jfileinfop;
+  jfileinfop = json_object_array_get_idx(jnodeinfop, 1);
+  if (jfileinfop == NULL) {
+    warnx("no fileinfo exists.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+
+  /* children exist only in dirnode. */
+  struct json_object *jchildrenp = NULL;
+  jchildrenp = json_object_object_get(jfileinfop, "children");
+  if (jchildrenp == NULL) {
+    warnx("no children key in a dirnode fileinfo.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+
+  struct json_object_iter iter;
+  json_object_object_foreachC(jchildrenp, iter) {
+    tahoefs_readdir_baton_t baton;
+    baton.nodename = iter.key;
+    baton.infop = json_object_to_json_string(iter.val);
+    baton.nodename_listp = buf;
+    baton.fillerp = fillerp;
+    if (callback(&baton) == -1) {
+      warnx("failed to add %s to directory list.", iter.key);
+      continue;
+    }
+  }
+
   json_object_put(jnodeinfop);
 
   return (0);

@@ -22,14 +22,9 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _JSON_STUB_H_
-#define _JSON_STUB_H_
+#ifndef _FILECACHE_H_
+#define _FILECACHE_H_
 
-typedef int (*json_stub_iterate_children_callback_t)
-	(tahoefs_readdir_baton_t *);
-
-int json_stub_json_to_metadata(const char *, tahoefs_metadata_t *);
-int json_stub_iterate_children(void *, void *, const char *,
-			       json_stub_iterate_children_callback_t);
+int filecache_read(const char *, char *, size_t, off_t);
 
 #endif

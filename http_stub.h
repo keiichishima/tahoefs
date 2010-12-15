@@ -28,6 +28,7 @@
 int http_stub_initialize(void);
 int http_stub_terminate(void);
 int http_stub_get_info(const char *, char **, size_t *);
+int http_stub_read_file(const char *, const char *);
 
 
 #endif

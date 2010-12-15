@@ -35,16 +35,11 @@
 
 #include <curl/curl.h>
 
+#include "tahoefs.h"
 #include "http_stub.h"
 
-#define ROOT_CAP "URI:DIR2:wvttaywiquk5wrofckf4cndppe:zckelfnl24mg55a7rpbrflaomd7brdkpf74uokdxrmvsxwdne5pa"
-
-#define WAPI_DEFAULT_SERVER "localhost"
-#define WAPI_DEFAULT_PORT "3456"
-
 #define URL_GET_INFO "http://%s:%s/uri/%s%s?t=json"
-#define URL_GETATTR "http://%s:%s/uri/%s%s?t=json"
-#define URL_READFILE "http://%s:%s/uri/%s%s"
+#define URL_READ_FILE "http://%s:%s/uri/%s%s"
 
 struct http_stub_response_memory {
   u_int8_t *datap;
@@ -55,6 +50,8 @@ static int http_stub_get_to_memory(const char *,
 				   struct http_stub_response_memory *);
 static size_t http_stub_get_to_memory_callback(void *, size_t, size_t,
 					       void *);
+static int http_stub_get_to_file(const char *, const char *);
+static size_t http_stub_get_to_file_callback(void *, size_t, size_t, void *);
 
 int
 http_stub_initialize(void)
@@ -100,8 +97,8 @@ http_stub_get_info(const char *path, char **infopp, size_t *info_sizep)
   char tahoe_path[MAXPATHLEN];
   tahoe_path[0] = '\0';
   /* XXX read customized values for server, port, and root_cap. */
-  snprintf(tahoe_path, sizeof(tahoe_path), URL_GET_INFO, WAPI_DEFAULT_SERVER,
-	   WAPI_DEFAULT_PORT, ROOT_CAP, path);
+  snprintf(tahoe_path, sizeof(tahoe_path), URL_GET_INFO, config.webapi_server,
+	   config.webapi_port, config.root_cap, path);
 
   struct http_stub_response_memory response;
   response.datap = malloc(1);
@@ -179,4 +176,76 @@ http_stub_get_to_memory_callback(void *newdatap, size_t size,
   responsep->datap[responsep->size] = 0;
 
   return (real_size);
+}
+
+int
+http_stub_read_file(const char *path, const char *local_path)
+{
+  assert(path != NULL);
+  assert(local_path != NULL);
+
+  char tahoe_path[MAXPATHLEN];
+  tahoe_path[0] = '\0';
+  snprintf(tahoe_path, sizeof(tahoe_path), URL_READ_FILE, config.webapi_server,
+	   config.webapi_port, config.root_cap, path);
+
+  if (http_stub_get_to_file(tahoe_path, local_path) == -1) {
+    warnx("failed to get contents from %s.", tahoe_path);
+    return (-1);
+  }
+
+  return (0);
+  
+}
+
+static int
+http_stub_get_to_file(const char *url, const char *local_path)
+{
+  assert(url != NULL);
+  assert(local_path != NULL);
+
+  CURL *curl_handle;
+  if ((curl_handle = curl_easy_init()) == NULL) {
+    warnx("failed to initialize the CURL easy interface.");
+    return (-1);
+  }
+
+  /* set the URL to read. */
+  curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+  /* curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1); */
+
+  /* get the information of the specified file node. */
+  FILE *fp = fopen(local_path, "w");
+  if (fp == NULL) {
+    warn("failed to open %s to receive HTTP response.", local_path);
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
+		   http_stub_get_to_file_callback);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, fp);
+  curl_easy_perform(curl_handle);
+  fclose(fp);
+
+  long http_response_code = 0;
+  curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_response_code);
+  curl_easy_cleanup(curl_handle);
+
+  /* check HTTP response code. */
+  if (http_response_code != 200) {
+    /* treat all the response codes other than 200 as an error. */
+    warnx("received HTTP error response %ld.", http_response_code);
+    unlink(local_path);
+    return (-1);
+  }
+
+  return(0);
+}
+
+static size_t
+http_stub_get_to_file_callback(void *newdatap, size_t size, size_t nmemb,
+			       void *stream)
+{
+  int written = fwrite(newdatap, size, nmemb, (FILE *)stream);
+  return (written);
 }

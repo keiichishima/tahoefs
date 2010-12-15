@@ -38,6 +38,18 @@
 #include "tahoefs.h"
 #include "http_stub.h"
 #include "json_stub.h"
+#include "filecache.h"
+
+#define ROOT_CAP "URI:DIR2:wvttaywiquk5wrofckf4cndppe:zckelfnl24mg55a7rpbrflaomd7brdkpf74uokdxrmvsxwdne5pa"
+
+#define WEBAPI_DEFAULT_SERVER "localhost"
+#define WEBAPI_DEFAULT_PORT "3456"
+
+#define FILECACHE_DEFAULT_DIR ".tahoefs"
+
+tahoefs_global_config_t config;
+
+static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
 
 static int tahoe_getattr(const char *path, struct stat *stbufp)
 {
@@ -49,8 +61,8 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
   }
 
   /* convert the JSON data to tahoefs metadata. */
-  struct tahoefs_metadata metadata;
-  memset(&metadata, 0, sizeof (struct tahoefs_metadata));
+  tahoefs_metadata_t metadata;
+  memset(&metadata, 0, sizeof(tahoefs_metadata_t));
   if (json_stub_json_to_metadata(infop, &metadata) == -1) {
     warnx("failed to convert JSON data to tahoefs metadata.");
     return (-ENOENT);
@@ -93,28 +105,31 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
 
 static int tahoe_open(const char *path, struct fuse_file_info *fi)
 {
-  (void) fi;
+  if (fi->flags & (O_WRONLY|O_RDWR|O_APPEND|O_CREAT|O_TRUNC)) {
+    return (-EPERM);
+  }
 
-  if(strcmp(path, "/") != 0)
-    return -ENOENT;
+  struct stat stbuf;
+  memset(&stbuf, 0, sizeof(struct stat));
+  if (tahoe_getattr(path, &stbuf) == -1) {
+    /* cannot get attribute of the file. */
+    return (-ENOENT);
+  }
 
-  return 0;
+  return (0);
 }
 
 static int tahoe_read(const char *path, char *buf, size_t size,
-		     off_t offset, struct fuse_file_info *fi)
+		      off_t offset, struct fuse_file_info *fi)
 {
-	(void) buf;
-	(void) offset;
-	(void) fi;
 
-	if(strcmp(path, "/") != 0)
-		return -ENOENT;
+  int read = filecache_read(path, buf, size, offset);
+  if (read == -1) {
+    warnx("read %d bytes at %d from %s failed.", size, offset, path);
+    return (-1);
+  }
 
-	if (offset >= (1ULL << 32))
-		return 0;
-
-	return size;
+  return (read);
 }
 
 static int
@@ -128,12 +143,54 @@ tahoe_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     return (-ENOENT);
   }
 
-  return (-ENOENT);
+  if (json_stub_iterate_children(buf, filler, infop,
+				 tahoe_readdir_callback) == -1) {
+    warnx("failed to iterate child nodes.");
+    free(infop);
+    return (-1);
+  }
+
+  /* free the memory which keeps the HTTP response body. */
+  free(infop);
+
+  return (0);
+}
+
+static int
+tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
+{
+  assert(batonp != NULL);
+
+#if 0  
+  /* convert the JSON data to tahoefs metadata. */
+  tahoefs_metadata_t metadata;
+  memset(&metadata, 0, sizeof (tahoefs_metadata_t));
+  if (json_stub_json_to_metadata(batonp->infop, &metadata) == -1) {
+    warnx("failed to convert JSON data to tahoefs metadata.");
+    return (-1);
+  }
+  /* XXX convert metadata to struct stat. */
+#endif
+
+  fuse_fill_dir_t filler = (fuse_fill_dir_t)batonp->fillerp;
+  if (filler(batonp->nodename_listp, batonp->nodename,
+		     NULL /* XXX struct stat */, 0) == 1) {
+    warnx("failed to fill directory list buffer.");
+    return (-1);
+  };
+
+  return (0);
 }
 
 static void *
 tahoe_init(struct fuse_conn_info *conn)
 {
+
+  memset(&config, 0, sizeof(tahoefs_global_config_t));
+  config.root_cap = ROOT_CAP;
+  config.webapi_server = WEBAPI_DEFAULT_SERVER;
+  config.webapi_port = WEBAPI_DEFAULT_PORT;
+  config.filecache_dir = FILECACHE_DEFAULT_DIR;
 
   if (http_stub_initialize() == -1) {
     errx(EXIT_FAILURE, "failed to initialize the http_stub module.");

@@ -25,16 +25,36 @@
 #ifndef _TAHOEFS_H_
 #define _TAHOEFS_H_
 
+#define TAHOEFS_CAPABILITY_SIZE 128
+typedef struct tahoefs_global_config {
+  const char *root_cap;
+  const char *webapi_server;
+  const char *webapi_port;
+  const char *filecache_dir;
+} tahoefs_global_config_t;
+extern tahoefs_global_config_t config;
+
 #define TAHOEFS_METADATA_TYPE_UNKNOWN	0
 #define TAHOEFS_METADATA_TYPE_DIRNODE	1
 #define TAHOEFS_METADATA_TYPE_FILENODE	2
 
-struct tahoefs_metadata {
+typedef struct tahoefs_metadata {
   int type;
+  char rw_uri[TAHOEFS_CAPABILITY_SIZE];
+  char ro_uri[TAHOEFS_CAPABILITY_SIZE];
+  char verify_uri[TAHOEFS_CAPABILITY_SIZE];
   size_t size;
+  int mutable;
   time_t link_creation_time;
   time_t link_modification_time;
-};
+} tahoefs_metadata_t;
+
+typedef struct tahoefs_readdir_baton {
+  const char *nodename;
+  const char *infop;
+  void *nodename_listp;
+  void *fillerp;
+} tahoefs_readdir_baton_t;
 
 #endif
 

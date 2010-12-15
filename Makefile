@@ -7,7 +7,7 @@ LDFLAGS	+= $(shell curl-config --libs)
 LDFLAGS	+= $(shell pkg-config json --libs)
 
 targets	= tahoefs
-objs	= tahoefs.o http_stub.o json_stub.o
+objs	= tahoefs.o http_stub.o json_stub.o filecache.o
 
 all: $(targets)
 
