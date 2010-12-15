@@ -24,6 +24,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -186,12 +187,6 @@ static void *
 tahoe_init(struct fuse_conn_info *conn)
 {
 
-  memset(&config, 0, sizeof(tahoefs_global_config_t));
-  config.root_cap = ROOT_CAP;
-  config.webapi_server = WEBAPI_DEFAULT_SERVER;
-  config.webapi_port = WEBAPI_DEFAULT_PORT;
-  config.filecache_dir = FILECACHE_DEFAULT_DIR;
-
   if (http_stub_initialize() == -1) {
     errx(EXIT_FAILURE, "failed to initialize the http_stub module.");
   }
@@ -217,8 +212,32 @@ static struct fuse_operations tahoe_oper = {
   .readdir	= tahoe_readdir,
 };
 
+#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
+static const struct fuse_opt tahoefs_opts[] = {
+  TAHOEFS_OPT("-r %s",		root_cap),
+  TAHOEFS_OPT("--root-cap-%s",	root_cap),
+  TAHOEFS_OPT("-s %s",		webapi_server),
+  TAHOEFS_OPT("--server=%s",	webapi_server),
+  TAHOEFS_OPT("-p %s",		webapi_port),
+  TAHOEFS_OPT("--port=%s",	webapi_port),
+  TAHOEFS_OPT("-c %s",		filecache_dir),
+  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
+  FUSE_OPT_END
+};
+
 int main(int argc, char *argv[])
 {
 
-  return fuse_main(argc, argv, &tahoe_oper, NULL);
+  memset(&config, 0, sizeof(tahoefs_global_config_t));
+  config.root_cap = ROOT_CAP;
+  config.webapi_server = WEBAPI_DEFAULT_SERVER;
+  config.webapi_port = WEBAPI_DEFAULT_PORT;
+  config.filecache_dir = FILECACHE_DEFAULT_DIR;
+
+  struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+  if (fuse_opt_parse(&args, &config, tahoefs_opts, NULL) == -1) {
+    errx(EXIT_FAILURE, "failed to parse options.");
+  }
+
+  return fuse_main(args.argc, args.argv, &tahoe_oper, NULL);
 }
