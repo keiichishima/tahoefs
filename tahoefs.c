@@ -42,7 +42,8 @@
 #include "json_stub.h"
 #include "filecache.h"
 
-#define TAHOE_DEFAULT_ALIASES_PATH ".tahoe/private/aliases"
+#define TAHOE_DEFAULT_DIR ".tahoe"
+#define TAHOE_DEFAULT_ALIASES_PATH "private/aliases"
 #define TAHOE_DEFAULT_ROOT_ALIAS "tahoe:"
 
 #define TAHOE_DEFAULT_WEBAPI_SERVER "localhost"
@@ -74,6 +75,8 @@ static struct fuse_operations tahoe_oper = {
 
 #define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
 static const struct fuse_opt tahoefs_opts[] = {
+  TAHOEFS_OPT("-t %s",		tahoe_dir),
+  TAHOEFS_OPT("--tahoe-dir-%s",	tahoe_dir),
   TAHOEFS_OPT("-r %s",		root_cap),
   TAHOEFS_OPT("--root-cap-%s",	root_cap),
   TAHOEFS_OPT("-s %s",		webapi_server),
@@ -237,9 +240,15 @@ tahoe_destroy(void *dummy)
 const char *
 tahoe_default_root_cap(void)
 {
+  assert(config.tahoe_dir != NULL);
+
   char alias_path[MAXPATHLEN];
   alias_path[0] = '\0';
-  strcat(alias_path, getenv("HOME"));
+  if (config.tahoe_dir[0] != '/') {
+    strcat(alias_path, getenv("HOME"));
+    strcat(alias_path, "/");
+  }
+  strcat(alias_path, config.tahoe_dir);
   strcat(alias_path, "/");
   strcat(alias_path, TAHOE_DEFAULT_ALIASES_PATH);
   FILE *fp;
@@ -287,17 +296,21 @@ tahoe_default_root_cap(void)
 int main(int argc, char *argv[])
 {
   memset(&config, 0, sizeof(tahoefs_global_config_t));
+  config.tahoe_dir = TAHOE_DEFAULT_DIR;
   config.webapi_server = TAHOE_DEFAULT_WEBAPI_SERVER;
   config.webapi_port = TAHOE_DEFAULT_WEBAPI_PORT;
   config.filecache_dir = TAHOE_DEFAULT_FILECACHE_DIR;
-
-  config.root_cap = tahoe_default_root_cap();
 
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
   if (fuse_opt_parse(&args, &config, tahoefs_opts, NULL) == -1) {
     errx(EXIT_FAILURE, "failed to parse options.");
   }
-
+  if (config.root_cap == NULL) {
+    config.root_cap = tahoe_default_root_cap();
+    if (config.root_cap == NULL) {
+      err(EXIT_FAILURE, "failed to get your ROOT_CAP information.");
+    }
+  }
 
   return fuse_main(args.argc, args.argv, &tahoe_oper, NULL);
 }

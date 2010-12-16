@@ -27,6 +27,7 @@
 
 #define TAHOEFS_CAPABILITY_SIZE 128
 typedef struct tahoefs_global_config {
+  const char *tahoe_dir;
   const char *root_cap;
   const char *webapi_server;
   const char *webapi_port;
