@@ -28,6 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/param.h>
 #include <math.h>
 #include <errno.h>
 #include <assert.h>
@@ -41,16 +42,48 @@
 #include "json_stub.h"
 #include "filecache.h"
 
-#define ROOT_CAP "URI:DIR2:wvttaywiquk5wrofckf4cndppe:zckelfnl24mg55a7rpbrflaomd7brdkpf74uokdxrmvsxwdne5pa"
+#define TAHOE_DEFAULT_ALIASES_PATH ".tahoe/private/aliases"
+#define TAHOE_DEFAULT_ROOT_ALIAS "tahoe:"
 
-#define WEBAPI_DEFAULT_SERVER "localhost"
-#define WEBAPI_DEFAULT_PORT "3456"
+#define TAHOE_DEFAULT_WEBAPI_SERVER "localhost"
+#define TAHOE_DEFAULT_WEBAPI_PORT "3456"
 
-#define FILECACHE_DEFAULT_DIR ".tahoefs"
+#define TAHOE_DEFAULT_FILECACHE_DIR ".tahoefs"
 
 tahoefs_global_config_t config;
 
+static int tahoe_getattr(const char *, struct stat *);
+static int tahoe_open(const char *, struct fuse_file_info *);
+static int tahoe_read(const char *, char *, size_t, off_t,
+		      struct fuse_file_info *);
+static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
+			 struct fuse_file_info *);
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
+static void *tahoe_init(struct fuse_conn_info *);
+static void tahoe_destroy(void *);
+const char *tahoe_default_root_cap(void);
+
+static struct fuse_operations tahoe_oper = {
+  .init		= tahoe_init,
+  .destroy	= tahoe_destroy,
+  .getattr	= tahoe_getattr,
+  .open		= tahoe_open,
+  .read		= tahoe_read,
+  .readdir	= tahoe_readdir,
+};
+
+#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
+static const struct fuse_opt tahoefs_opts[] = {
+  TAHOEFS_OPT("-r %s",		root_cap),
+  TAHOEFS_OPT("--root-cap-%s",	root_cap),
+  TAHOEFS_OPT("-s %s",		webapi_server),
+  TAHOEFS_OPT("--server=%s",	webapi_server),
+  TAHOEFS_OPT("-p %s",		webapi_port),
+  TAHOEFS_OPT("--port=%s",	webapi_port),
+  TAHOEFS_OPT("-c %s",		filecache_dir),
+  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
+  FUSE_OPT_END
+};
 
 static int tahoe_getattr(const char *path, struct stat *stbufp)
 {
@@ -72,6 +105,7 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
   /* free the memory which keeps the HTTP response body. */
   free(infop);
 
+  /* fill the struct stat{} structure. */
   switch (metadata.type) {
   case TAHOEFS_METADATA_TYPE_DIRNODE:
     stbufp->st_mode = S_IFDIR | 0700;
@@ -123,7 +157,6 @@ static int tahoe_open(const char *path, struct fuse_file_info *fi)
 static int tahoe_read(const char *path, char *buf, size_t size,
 		      off_t offset, struct fuse_file_info *fi)
 {
-
   int read = filecache_read(path, buf, size, offset);
   if (read == -1) {
     warnx("read %ld bytes at %ld from %s failed.", size, offset, path);
@@ -146,7 +179,7 @@ tahoe_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
   if (json_stub_iterate_children(buf, filler, infop,
 				 tahoe_readdir_callback) == -1) {
-    warnx("failed to iterate child nodes.");
+    warnx("failed to iterate child nodes of %s.", path);
     free(infop);
     return (-1);
   }
@@ -186,7 +219,6 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
 static void *
 tahoe_init(struct fuse_conn_info *conn)
 {
-
   if (http_stub_initialize() == -1) {
     errx(EXIT_FAILURE, "failed to initialize the http_stub module.");
   }
@@ -197,47 +229,75 @@ tahoe_init(struct fuse_conn_info *conn)
 static void
 tahoe_destroy(void *dummy)
 {
-
   if (http_stub_terminate() == -1) {
     errx(EXIT_FAILURE, "failed to teminate the http_stub module.");
   }
 }
 
-static struct fuse_operations tahoe_oper = {
-  .init		= tahoe_init,
-  .destroy	= tahoe_destroy,
-  .getattr	= tahoe_getattr,
-  .open		= tahoe_open,
-  .read		= tahoe_read,
-  .readdir	= tahoe_readdir,
-};
+const char *
+tahoe_default_root_cap(void)
+{
+  char alias_path[MAXPATHLEN];
+  alias_path[0] = '\0';
+  strcat(alias_path, getenv("HOME"));
+  strcat(alias_path, "/");
+  strcat(alias_path, TAHOE_DEFAULT_ALIASES_PATH);
+  FILE *fp;
+  fp = fopen(alias_path, "r");
+  if (fp == NULL) {
+    /*
+     * no .tahoe/private/aliases file found. -r option must be exist
+     * in this case.
+     */
+    return (NULL);
+  }
 
-#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
-static const struct fuse_opt tahoefs_opts[] = {
-  TAHOEFS_OPT("-r %s",		root_cap),
-  TAHOEFS_OPT("--root-cap-%s",	root_cap),
-  TAHOEFS_OPT("-s %s",		webapi_server),
-  TAHOEFS_OPT("--server=%s",	webapi_server),
-  TAHOEFS_OPT("-p %s",		webapi_port),
-  TAHOEFS_OPT("--port=%s",	webapi_port),
-  TAHOEFS_OPT("-c %s",		filecache_dir),
-  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
-  FUSE_OPT_END
-};
+  char alias[256]; /* XXX dirty. */
+  while (!feof(fp)) {
+    if (fgets(alias, sizeof(alias), fp) == NULL) {
+      warn("failed to read alias definition.");
+      fclose(fp);
+      return (NULL);
+    }
+
+   if (strstr(alias, TAHOE_DEFAULT_ROOT_ALIAS) != alias) {
+      /* this is not a "tahoe:" line. */
+      continue;
+    }
+
+    char *uri = strstr(alias, "URI:");
+    if (uri == NULL) {
+      warn("unexpected alias format %s.", alias);
+      continue;
+    }
+
+    char *newline = strrchr(uri, '\n');
+    if (newline) {
+      *newline = '\0';
+    }
+
+    fclose(fp);
+    return (strdup(uri));
+  }
+
+  fclose(fp);
+  return (NULL);
+}
 
 int main(int argc, char *argv[])
 {
-
   memset(&config, 0, sizeof(tahoefs_global_config_t));
-  config.root_cap = ROOT_CAP;
-  config.webapi_server = WEBAPI_DEFAULT_SERVER;
-  config.webapi_port = WEBAPI_DEFAULT_PORT;
-  config.filecache_dir = FILECACHE_DEFAULT_DIR;
+  config.webapi_server = TAHOE_DEFAULT_WEBAPI_SERVER;
+  config.webapi_port = TAHOE_DEFAULT_WEBAPI_PORT;
+  config.filecache_dir = TAHOE_DEFAULT_FILECACHE_DIR;
+
+  config.root_cap = tahoe_default_root_cap();
 
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
   if (fuse_opt_parse(&args, &config, tahoefs_opts, NULL) == -1) {
     errx(EXIT_FAILURE, "failed to parse options.");
   }
+
 
   return fuse_main(args.argc, args.argv, &tahoe_oper, NULL);
 }
