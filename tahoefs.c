@@ -83,7 +83,7 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
     stbufp->st_size = metadata.size;
     break;
   default:
-    warnx("unknown tahoefs node type %d.");
+    warnx("unknown tahoefs node type %d.", metadata.type);
     return (-ENOENT);
   }
 
@@ -126,7 +126,7 @@ static int tahoe_read(const char *path, char *buf, size_t size,
 
   int read = filecache_read(path, buf, size, offset);
   if (read == -1) {
-    warnx("read %d bytes at %d from %s failed.", size, offset, path);
+    warnx("read %ld bytes at %ld from %s failed.", size, offset, path);
     return (-1);
   }
 

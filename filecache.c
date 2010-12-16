@@ -22,6 +22,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __linux__
+#define _XOPEN_SOURCE 500
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
