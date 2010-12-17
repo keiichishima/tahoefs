@@ -88,16 +88,16 @@ http_stub_get_info(const char *path, char **infopp, size_t *info_sizep)
   assert(*infopp == NULL);
   assert(info_sizep != NULL);
 
-  char tahoe_path[MAXPATHLEN]; /* XXX enough? */
-  tahoe_path[0] = '\0';
-  snprintf(tahoe_path, sizeof(tahoe_path), URL_GET_INFO, config.webapi_server,
+  char tahoe_url[MAXPATHLEN]; /* XXX enough? */
+  tahoe_url[0] = '\0';
+  snprintf(tahoe_url, sizeof(tahoe_url), URL_GET_INFO, config.webapi_server,
 	   config.webapi_port, config.root_cap, path);
 
   http_stub_get_baton_t response;
   response.datap = malloc(1);
   response.size = 0;
-  if (http_stub_get_to_memory(tahoe_path, &response) == -1) {
-    warnx("failed to get contents from %s.", tahoe_path);
+  if (http_stub_get_to_memory(tahoe_url, &response) == -1) {
+    warnx("failed to get contents from %s.", tahoe_url);
     if (response.datap)
       free(response.datap);
     return (-1);
@@ -226,13 +226,13 @@ http_stub_read_file(const char *path, const char *local_path)
   assert(path != NULL);
   assert(local_path != NULL);
 
-  char tahoe_path[MAXPATHLEN];
-  tahoe_path[0] = '\0';
-  snprintf(tahoe_path, sizeof(tahoe_path), URL_READ_FILE, config.webapi_server,
+  char tahoe_url[MAXPATHLEN];
+  tahoe_url[0] = '\0';
+  snprintf(tahoe_url, sizeof(tahoe_url), URL_READ_FILE, config.webapi_server,
 	   config.webapi_port, config.root_cap, path);
 
-  if (http_stub_get_to_file(tahoe_path, local_path) == -1) {
-    warnx("failed to get contents from %s.", tahoe_path);
+  if (http_stub_get_to_file(tahoe_url, local_path) == -1) {
+    warnx("failed to get contents from %s.", tahoe_url);
     return (-1);
   }
 
