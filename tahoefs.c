@@ -98,10 +98,10 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
   }
 
   /* convert the JSON data to tahoefs metadata. */
-  tahoefs_metadata_t metadata;
-  memset(&metadata, 0, sizeof(tahoefs_metadata_t));
-  if (json_stub_json_to_metadata(infop, &metadata) == -1) {
-    warnx("failed to convert JSON data to tahoefs metadata.");
+  tahoefs_stat_t tstat;
+  memset(&tstat, 0, sizeof(tahoefs_stat_t));
+  if (json_stub_json_to_metadata(infop, &tstat) == -1) {
+    warnx("failed to convert JSON data to tahoefs stat structure.");
     return (-ENOENT);
   }
 
@@ -109,7 +109,7 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
   free(infop);
 
   /* fill the struct stat{} structure. */
-  switch (metadata.type) {
+  switch (tstat.type) {
   case TAHOEFS_METADATA_TYPE_DIRNODE:
     stbufp->st_mode = S_IFDIR | 0700;
     /* XXX we have no idea about the directory size. */
@@ -117,10 +117,10 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
     break;
   case TAHOEFS_METADATA_TYPE_FILENODE:
     stbufp->st_mode = S_IFREG | 0600;
-    stbufp->st_size = metadata.size;
+    stbufp->st_size = tstat.size;
     break;
   default:
-    warnx("unknown tahoefs node type %d.", metadata.type);
+    warnx("unknown tahoefs node type %d.", tstat.type);
     return (-ENOENT);
   }
 
@@ -136,7 +136,7 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
 
   /* timestamps. */
   stbufp->st_ctime = stbufp->st_atime = stbufp->st_mtime
-    = metadata.link_modification_time;
+    = tstat.link_modification_time;
 
   return (0);
 }

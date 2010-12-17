@@ -61,6 +61,15 @@ static int filecache_cache_file(const char *, const char *);
 static int filecache_mkdir_parent(const char *);
 
 int
+filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
+{
+  assert(path != NULL);
+  assert(tstatp != NULL);
+
+  return (-1);
+}
+
+int
 filecache_read(const char *path, char *buf, size_t size, off_t offset)
 {
   assert(path != NULL);

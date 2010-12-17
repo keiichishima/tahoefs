@@ -37,10 +37,10 @@
 #include "json_stub.h"
 
 int
-json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
+json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
 {
   assert(json != NULL);
-  assert(metadatap != NULL);
+  assert(tstatp != NULL);
 
   /* parse the node information. */
   struct json_object *jnodeinfop;
@@ -66,9 +66,9 @@ json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
     return (-1);
   }
   if (strcmp(nodetype, "dirnode") == 0) {
-    metadatap->type = TAHOEFS_METADATA_TYPE_DIRNODE;
+    tstatp->type = TAHOEFS_METADATA_TYPE_DIRNODE;
   } else if (strcmp(nodetype, "filenode") == 0) {
-    metadatap->type = TAHOEFS_METADATA_TYPE_FILENODE;
+    tstatp->type = TAHOEFS_METADATA_TYPE_FILENODE;
   } else {
     warnx("unknown file mode."); 
     json_object_put(jnodeinfop);
@@ -100,11 +100,21 @@ json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
   struct json_object *jsizep;
   jsizep = json_object_object_get(jfileinfop, "size");
   if (jsizep) {
-    metadatap->size = json_object_get_int(jsizep);
+    tstatp->size = json_object_get_int(jsizep);
   } else {
     /* unknown. maybe directory. */
-    metadatap->size = 0;
+    tstatp->size = 0;
   }
+
+  /* "mutable" key. */
+  struct json_object *jmutablep;
+  jmutablep = json_object_object_get(jfileinfop, "mutable");
+  if (jmutablep == NULL) {
+    warnx("no mutable key exist.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+  tstatp->mutable = json_object_get_boolean(jmutablep);
 
   /* uri keys. */
   struct json_object *jurip;
@@ -114,7 +124,7 @@ json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
     json_object_put(jnodeinfop);
     return (-1);
   }
-  strncpy(metadatap->ro_uri, json_object_get_string(jurip),
+  strncpy(tstatp->ro_uri, json_object_get_string(jurip),
 	  TAHOEFS_CAPABILITY_SIZE);
 
   jurip = json_object_object_get(jfileinfop, "verify_uri");
@@ -123,12 +133,12 @@ json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
     json_object_put(jnodeinfop);
     return (-1);
   }
-  strncpy(metadatap->verify_uri, json_object_get_string(jurip),
+  strncpy(tstatp->verify_uri, json_object_get_string(jurip),
 	  TAHOEFS_CAPABILITY_SIZE);
 
   jurip = json_object_object_get(jfileinfop, "rw_uri");
   if (jurip) {
-    strncpy(metadatap->verify_uri, json_object_get_string(jurip),
+    strncpy(tstatp->verify_uri, json_object_get_string(jurip),
 	    TAHOEFS_CAPABILITY_SIZE);
   }
 
@@ -138,11 +148,11 @@ json_stub_json_to_metadata(const char *json, tahoefs_metadata_t *metadatap)
     struct json_object *jtimep;
     jtimep = json_object_object_get(jmeta_tahoep, "linkcrtime");
     time = json_object_get_double(jtimep);
-    metadatap->link_creation_time = (time_t)time;
+    tstatp->link_creation_time = (time_t)time;
 
     jtimep = json_object_object_get(jmeta_tahoep, "linkmotime");
     time = json_object_get_double(jtimep);
-    metadatap->link_modification_time = (time_t)time;
+    tstatp->link_modification_time = (time_t)time;
   }
 
   /* release the parsed JSON structure. */

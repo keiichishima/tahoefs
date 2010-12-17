@@ -41,13 +41,12 @@
 #define URL_GET_INFO "http://%s:%s/uri/%s%s?t=json"
 #define URL_READ_FILE "http://%s:%s/uri/%s%s"
 
-struct http_stub_response_memory {
+typedef struct http_stub_get_baton {
   u_int8_t *datap;
   size_t size;
-};
+} http_stub_get_baton_t;
 
-static int http_stub_get_to_memory(const char *,
-				   struct http_stub_response_memory *);
+static int http_stub_get_to_memory(const char *, http_stub_get_baton_t *);
 static size_t http_stub_get_to_memory_callback(void *, size_t, size_t,
 					       void *);
 static int http_stub_get_to_file(const char *, const char *);
@@ -56,7 +55,6 @@ static size_t http_stub_get_to_file_callback(void *, size_t, size_t, void *);
 int
 http_stub_initialize(void)
 {
-
   if (curl_global_init(CURL_GLOBAL_ALL) != 0) {
     warnx("failed to initialize the CURL library.");
     return (-1);
@@ -68,7 +66,6 @@ http_stub_initialize(void)
 int
 http_stub_terminate(void)
 {
-
   curl_global_cleanup();
 
   return (0);
@@ -78,9 +75,6 @@ http_stub_terminate(void)
  * issue a HTTP GET request to get filenode or dirnode information stored
  * in the tahoe storage related to the location specified as the path
  * parameter.
- *
- * the webapi server, port, and root_cap information is appended
- * within this function.
  *
  * infopp and info_sizep will be filled with the HTTP GET response
  * body and the length of the response message.  THE CALLER MUST FREE
@@ -94,13 +88,12 @@ http_stub_get_info(const char *path, char **infopp, size_t *info_sizep)
   assert(*infopp == NULL);
   assert(info_sizep != NULL);
 
-  char tahoe_path[MAXPATHLEN];
+  char tahoe_path[MAXPATHLEN]; /* XXX enough? */
   tahoe_path[0] = '\0';
-  /* XXX read customized values for server, port, and root_cap. */
   snprintf(tahoe_path, sizeof(tahoe_path), URL_GET_INFO, config.webapi_server,
 	   config.webapi_port, config.root_cap, path);
 
-  struct http_stub_response_memory response;
+  http_stub_get_baton_t response;
   response.datap = malloc(1);
   response.size = 0;
   if (http_stub_get_to_memory(tahoe_path, &response) == -1) {
@@ -115,9 +108,13 @@ http_stub_get_info(const char *path, char **infopp, size_t *info_sizep)
   return (0);
 }
 
+/*
+ * call CURL functions to get the contents of the url specified as the
+ * url parameter.  the response will be stored in the memory space
+ * specified by the responsep->datap parameter.
+ */
 static int
-http_stub_get_to_memory(const char *url,
-			struct http_stub_response_memory *responsep)
+http_stub_get_to_memory(const char *url, http_stub_get_baton_t *responsep)
 {
   assert(url != NULL);
   assert(responsep != NULL);
@@ -130,45 +127,84 @@ http_stub_get_to_memory(const char *url,
   }
 
   /* set the URL to read. */
-  curl_easy_setopt(curl_handle, CURLOPT_URL, url);
-  /* curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1); */
+  CURLcode ret;
+  ret = curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+  if (ret != CURLE_OK) {
+    warnx("failed to set URL %s. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
 
   /* get the information of the specified file node. */
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
-		   http_stub_get_to_memory_callback);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)responsep);
-  curl_easy_perform(curl_handle);
-  long http_response_code = 0;
-  curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_response_code);
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
+			 http_stub_get_to_memory_callback);
+  if (ret != CURLE_OK) {
+    warnx("failed to set write function for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)responsep);
+  if (ret != CURLE_OK) {
+    warnx("failed to set callback baton for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  ret = curl_easy_perform(curl_handle);
+  if (ret != CURLE_OK) {
+    warnx("failed to perform CURL operation for %s. (CURL: %s)",
+	  url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  long response_code = 0;
+  ret = curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE,
+			  &response_code);
+  if (ret != CURLE_OK) {
+    warnx("failed to get CURL operation response code for %s. (CURL: %s)",
+	  url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
   curl_easy_cleanup(curl_handle);
 
   /* check HTTP response code. */
-  if (http_response_code != 200) {
+  if (response_code != 200) {
     /* treat all the response codes other than 200 as no existent entry. */
-    warnx("received HTTP error response %ld.", http_response_code);
+#ifdef DEBUG
+    warnx("received HTTP error response %ld.", response_code);
+#endif
     return (-1);
   }
   if (responsep->datap == NULL) {
-    warnx("failed to reallocate response buffer.");
+    warnx("failed to reallocate memory for HTTP response.");
     return (-1);
   }
 
   return(0);
 }
 
+/*
+ * the callback function of the http_stub_get_to_memory() function.
+ * every time the CURL library receives a part of the response
+ * message, this function is called.  the storage passed as a
+ * batonp->datap will be enlarged whenever necessary.
+ */
 static size_t
-http_stub_get_to_memory_callback(void *newdatap, size_t size,
-				 size_t nmemb, void *gluep)
+http_stub_get_to_memory_callback(void *newdatap, size_t size, size_t nmemb,
+				 void *batonp)
 {
   assert(newdatap != NULL);
-  assert(gluep != NULL);
+  assert(batonp != NULL);
 
   size_t real_size = size * nmemb;
-  struct http_stub_response_memory *responsep
-    = (struct http_stub_response_memory *)gluep;
+  http_stub_get_baton_t *responsep = (http_stub_get_baton_t *)batonp;
   responsep->datap = realloc(responsep->datap, responsep->size + real_size + 1);
   if (responsep->datap == NULL) {
-    warnx("failed to reallocate memory for http response.");
+    warnx("failed to reallocate memory for HTTP response.");
     return (0);
   }
   memcpy(&(responsep->datap[responsep->size]), newdatap, real_size);
@@ -178,6 +214,12 @@ http_stub_get_to_memory_callback(void *newdatap, size_t size,
   return (real_size);
 }
 
+/*
+ * issue a HTTP GET request to get the content of a filenode stored in
+ * the tahoe storage related to the location specified as the path
+ * parameter.  the received content will be saved at the local_path of
+ * the local filesystem.
+ */
 int
 http_stub_read_file(const char *path, const char *local_path)
 {
@@ -198,6 +240,11 @@ http_stub_read_file(const char *path, const char *local_path)
   
 }
 
+/*
+ * call CURL functions to get the contents of the url specified as the
+ * url parameter.  the response will be stored at the path specified
+ * by the local_path parameter.
+ */
 static int
 http_stub_get_to_file(const char *url, const char *local_path)
 {
@@ -211,30 +258,57 @@ http_stub_get_to_file(const char *url, const char *local_path)
   }
 
   /* set the URL to read. */
-  curl_easy_setopt(curl_handle, CURLOPT_URL, url);
-  /* curl_easy_setopt(curl_handle, CURLOPT_VERBOSE, 1); */
-
-  /* get the information of the specified file node. */
+  CURLcode ret;
+  ret = curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+  if (ret != CURLE_OK) {
+    warnx("failed to set URL %s. (CURL: %s)", url, curl_easy_strerror(ret));
+    return (-1);
+  }
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
+			 http_stub_get_to_file_callback);
+  if (ret != CURLE_OK) {
+    warnx("failed to set write function for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  /* open the specified file to store the returned HTTP content. */
   FILE *fp = fopen(local_path, "w");
   if (fp == NULL) {
     warn("failed to open %s to receive HTTP response.", local_path);
     curl_easy_cleanup(curl_handle);
     return (-1);
   }
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
-		   http_stub_get_to_file_callback);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, fp);
-  curl_easy_perform(curl_handle);
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, fp);
+  if (ret != CURLE_OK) {
+    warnx("failed to set file pointer to store HTTP content. (CURL: %s)",
+	  curl_easy_strerror(ret));
+    fclose(fp);
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  ret = curl_easy_perform(curl_handle);
+  if (ret != CURLE_OK) {
+    warnx("failed to perform CURL operation for %s. (CURL: %s)",
+	  url, curl_easy_strerror(ret));
+    fclose(fp);
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
   fclose(fp);
 
-  long http_response_code = 0;
-  curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_response_code);
+  long response_code = 0;
+  curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &response_code);
   curl_easy_cleanup(curl_handle);
 
   /* check HTTP response code. */
-  if (http_response_code != 200) {
+  if (response_code != 200) {
     /* treat all the response codes other than 200 as an error. */
-    warnx("received HTTP error response %ld.", http_response_code);
+#ifdef DEBUG
+    warnx("received HTTP error response %ld.", response_code);
+#endif
+    /* remove an incomplete file. */
     unlink(local_path);
     return (-1);
   }
@@ -242,6 +316,12 @@ http_stub_get_to_file(const char *url, const char *local_path)
   return(0);
 }
 
+/*
+ * the callback function of the http_stub_get_to_file() function.
+ * every time the CURL library receives a part of the response
+ * message, this function is called.  the received data will be
+ * appended to the open file specified as the fp parameter.
+ */
 static size_t
 http_stub_get_to_file_callback(void *newdatap, size_t size, size_t nmemb,
 			       void *stream)

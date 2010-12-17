@@ -39,7 +39,7 @@ extern tahoefs_global_config_t config;
 #define TAHOEFS_METADATA_TYPE_DIRNODE	1
 #define TAHOEFS_METADATA_TYPE_FILENODE	2
 
-typedef struct tahoefs_metadata {
+typedef struct tahoefs_stat {
   int type;
   char rw_uri[TAHOEFS_CAPABILITY_SIZE];
   char ro_uri[TAHOEFS_CAPABILITY_SIZE];
@@ -48,7 +48,7 @@ typedef struct tahoefs_metadata {
   int mutable;
   time_t link_creation_time;
   time_t link_modification_time;
-} tahoefs_metadata_t;
+} tahoefs_stat_t;
 
 typedef struct tahoefs_readdir_baton {
   const char *nodename;

@@ -25,6 +25,7 @@
 #ifndef _FILECACHE_H_
 #define _FILECACHE_H_
 
+int filecache_getattr(const char *, tahoefs_stat_t *);
 int filecache_read(const char *, char *, size_t, off_t);
 
 #endif
