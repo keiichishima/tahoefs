@@ -35,9 +35,9 @@ typedef struct tahoefs_global_config {
 } tahoefs_global_config_t;
 extern tahoefs_global_config_t config;
 
-#define TAHOEFS_METADATA_TYPE_UNKNOWN	0
-#define TAHOEFS_METADATA_TYPE_DIRNODE	1
-#define TAHOEFS_METADATA_TYPE_FILENODE	2
+#define TAHOEFS_STAT_TYPE_UNKNOWN	0
+#define TAHOEFS_STAT_TYPE_DIRNODE	1
+#define TAHOEFS_STAT_TYPE_FILENODE	2
 
 typedef struct tahoefs_stat {
   int type;

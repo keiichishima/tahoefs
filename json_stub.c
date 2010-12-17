@@ -66,9 +66,9 @@ json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
     return (-1);
   }
   if (strcmp(nodetype, "dirnode") == 0) {
-    tstatp->type = TAHOEFS_METADATA_TYPE_DIRNODE;
+    tstatp->type = TAHOEFS_STAT_TYPE_DIRNODE;
   } else if (strcmp(nodetype, "filenode") == 0) {
-    tstatp->type = TAHOEFS_METADATA_TYPE_FILENODE;
+    tstatp->type = TAHOEFS_STAT_TYPE_FILENODE;
   } else {
     warnx("unknown file mode."); 
     json_object_put(jnodeinfop);
@@ -85,7 +85,7 @@ json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
   }
 
 #ifdef DEBUG
-  printf("%s\n", json_object_to_json_string(jfileinfop));
+  printf("nodeinfo = %s\n", json_object_to_json_string(jfileinfop));
 #endif
 
   /* "metadata" and "metadata":{"tahoe"} exist only in filenode. */

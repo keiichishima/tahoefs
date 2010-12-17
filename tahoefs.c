@@ -90,32 +90,21 @@ static const struct fuse_opt tahoefs_opts[] = {
 
 static int tahoe_getattr(const char *path, struct stat *stbufp)
 {
-  char *infop = NULL;
-  size_t info_size;
-  if (http_stub_get_info(path, &infop, &info_size) == -1) {
-    warnx("failed to get node information of %s.", path);
-    return (-ENOENT);
-  }
-
-  /* convert the JSON data to tahoefs metadata. */
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
-  if (json_stub_json_to_metadata(infop, &tstat) == -1) {
-    warnx("failed to convert JSON data to tahoefs stat structure.");
+  if (filecache_getattr(path, &tstat) == -1) {
+    warnx("failed to get file infor of %s.", path);
     return (-ENOENT);
   }
-
-  /* free the memory which keeps the HTTP response body. */
-  free(infop);
 
   /* fill the struct stat{} structure. */
   switch (tstat.type) {
-  case TAHOEFS_METADATA_TYPE_DIRNODE:
+  case TAHOEFS_STAT_TYPE_DIRNODE:
     stbufp->st_mode = S_IFDIR | 0700;
     /* XXX we have no idea about the directory size. */
     stbufp->st_size = 4096;
     break;
-  case TAHOEFS_METADATA_TYPE_FILENODE:
+  case TAHOEFS_STAT_TYPE_FILENODE:
     stbufp->st_mode = S_IFREG | 0600;
     stbufp->st_size = tstat.size;
     break;
