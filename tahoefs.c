@@ -62,7 +62,9 @@ static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
 static void *tahoe_init(struct fuse_conn_info *);
 static void tahoe_destroy(void *);
-const char *tahoe_default_root_cap(void);
+static const char *tahoe_default_root_cap(void);
+static void tahoefs_usage(const char *);
+static int tahoefs_opt_proc(void *, const char *, int, struct fuse_args *);
 
 static struct fuse_operations tahoe_oper = {
   .init		= tahoe_init,
@@ -71,21 +73,6 @@ static struct fuse_operations tahoe_oper = {
   .open		= tahoe_open,
   .read		= tahoe_read,
   .readdir	= tahoe_readdir,
-};
-
-#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
-static const struct fuse_opt tahoefs_opts[] = {
-  TAHOEFS_OPT("-t %s",		tahoe_dir),
-  TAHOEFS_OPT("--tahoe-dir-%s",	tahoe_dir),
-  TAHOEFS_OPT("-r %s",		root_cap),
-  TAHOEFS_OPT("--root-cap-%s",	root_cap),
-  TAHOEFS_OPT("-s %s",		webapi_server),
-  TAHOEFS_OPT("--server=%s",	webapi_server),
-  TAHOEFS_OPT("-p %s",		webapi_port),
-  TAHOEFS_OPT("--port=%s",	webapi_port),
-  TAHOEFS_OPT("-c %s",		filecache_dir),
-  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
-  FUSE_OPT_END
 };
 
 static int tahoe_getattr(const char *path, struct stat *stbufp)
@@ -226,7 +213,7 @@ tahoe_destroy(void *dummy)
   }
 }
 
-const char *
+static const char *
 tahoe_default_root_cap(void)
 {
   assert(config.tahoe_dir != NULL);
@@ -282,6 +269,60 @@ tahoe_default_root_cap(void)
   return (NULL);
 }
 
+static int
+tahoefs_opt_proc(void *data, const char *arg, int key,
+		 struct fuse_args *outargs)
+{
+  switch (key) {
+  case 0:
+    tahoefs_usage(outargs->argv[0]);
+    fuse_opt_add_arg(outargs, "-ho");
+    exit(1);
+  }
+  return (1);
+}
+
+#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
+static const struct fuse_opt tahoefs_opts[] = {
+  TAHOEFS_OPT("-t %s",		tahoe_dir),
+  TAHOEFS_OPT("--tahoe-dir=%s",	tahoe_dir),
+  TAHOEFS_OPT("-r %s",		root_cap),
+  TAHOEFS_OPT("--root-cap=%s",	root_cap),
+  TAHOEFS_OPT("-s %s",		webapi_server),
+  TAHOEFS_OPT("--server=%s",	webapi_server),
+  TAHOEFS_OPT("-p %s",		webapi_port),
+  TAHOEFS_OPT("--port=%s",	webapi_port),
+  TAHOEFS_OPT("-c %s",		filecache_dir),
+  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
+  FUSE_OPT_KEY("-h",		0),
+  FUSE_OPT_KEY("--help",	0),
+  FUSE_OPT_END
+};
+
+static void
+tahoefs_usage(const char *progname)
+{
+  fprintf(stderr,
+"usage: %s mountpoint [options]\n"
+"\n"
+"TAHOEFS options:\n"
+"    -t tahoedir           .tahoe directory (default: .tahoe)\n"
+"    --tahoe-dir=tahoedir  same as '-t tahoedir'\n"
+"    -r rootcap            root_cap URI (default: your 'tahoe:' alias)\n"
+"    --root-cap=rootcap    same as '-r rootcap'\n"
+"    -s server             webapi server address (default: localhost)\n"
+"    --server=server       same as '-s server'\n"
+"    -p port               webapi server port (default: 3456)\n"
+"    --port=port           same as '-p port'\n"
+"    -c cachedir           local cache directory (default: .tahoefs)\n"
+"    --cache-dir=cachedir  same as '-c cachedir'\n"
+"\n"
+"FUSE options:\n"
+"    -d                    enable debug output (implies -f)\n"
+"    -f                    foreground operation\n"
+"\n", progname);
+}
+
 int main(int argc, char *argv[])
 {
   memset(&config, 0, sizeof(tahoefs_global_config_t));
@@ -291,7 +332,8 @@ int main(int argc, char *argv[])
   config.filecache_dir = TAHOE_DEFAULT_FILECACHE_DIR;
 
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-  if (fuse_opt_parse(&args, &config, tahoefs_opts, NULL) == -1) {
+  if (fuse_opt_parse(&args, &config, tahoefs_opts,
+		     tahoefs_opt_proc) == -1) {
     errx(EXIT_FAILURE, "failed to parse options.");
   }
   if (config.root_cap == NULL) {
