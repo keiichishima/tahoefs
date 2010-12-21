@@ -62,9 +62,11 @@ static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
 static void *tahoe_init(struct fuse_conn_info *);
 static void tahoe_destroy(void *);
+
 static const char *tahoe_default_root_cap(void);
 static void tahoefs_usage(const char *);
 static int tahoefs_opt_proc(void *, const char *, int, struct fuse_args *);
+static int tahoefs_tstat_to_stat(const tahoefs_stat_t *, struct stat *);
 
 static struct fuse_operations tahoe_oper = {
   .init		= tahoe_init,
@@ -75,7 +77,7 @@ static struct fuse_operations tahoe_oper = {
   .readdir	= tahoe_readdir,
 };
 
-static int tahoe_getattr(const char *path, struct stat *stbufp)
+static int tahoe_getattr(const char *path, struct stat *statp)
 {
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
@@ -84,35 +86,10 @@ static int tahoe_getattr(const char *path, struct stat *stbufp)
     return (-ENOENT);
   }
 
-  /* fill the struct stat{} structure. */
-  switch (tstat.type) {
-  case TAHOEFS_STAT_TYPE_DIRNODE:
-    stbufp->st_mode = S_IFDIR | 0700;
-    /* XXX we have no idea about the directory size. */
-    stbufp->st_size = 4096;
-    break;
-  case TAHOEFS_STAT_TYPE_FILENODE:
-    stbufp->st_mode = S_IFREG | 0600;
-    stbufp->st_size = tstat.size;
-    break;
-  default:
-    warnx("unknown tahoefs node type %d.", tstat.type);
+  if (tahoefs_tstat_to_stat(&tstat, statp) == -1) {
+    warnx("failed to convert tahoefs_stat_t{} to stat{}.");
     return (-ENOENT);
   }
-
-  /* # of hard links. */
-  stbufp->st_nlink = 1;
-
-  /* uid and gid. */
-  stbufp->st_uid = getuid();
-  stbufp->st_gid = getgid();
-
-  /* # of 512B blocks allocated.  does it make any sense to set it? */
-  stbufp->st_blocks = 0;
-
-  /* timestamps. */
-  stbufp->st_ctime = stbufp->st_atime = stbufp->st_mtime
-    = tstat.link_modification_time;
 
   return (0);
 }
@@ -174,20 +151,23 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
 {
   assert(batonp != NULL);
 
-#if 0  
   /* convert the JSON data to tahoefs metadata. */
-  tahoefs_metadata_t metadata;
-  memset(&metadata, 0, sizeof (tahoefs_metadata_t));
-  if (json_stub_json_to_metadata(batonp->infop, &metadata) == -1) {
-    warnx("failed to convert JSON data to tahoefs metadata.");
+  tahoefs_stat_t tstat;
+  memset(&tstat, 0, sizeof(tahoefs_stat_t));
+  if (json_stub_json_to_metadata(batonp->infop, &tstat) == -1) {
+    warnx("failed to convert JSON stat data to tahoefs stat.");
     return (-1);
   }
-  /* XXX convert metadata to struct stat. */
-#endif
+  
+  struct stat stat;
+  memset(&stat, 0, sizeof(struct stat));
+  if (tahoefs_tstat_to_stat(&tstat, &stat) == -1) {
+    warnx("failed to convert tahoefs_stat_t{} to stat{}.");
+    return (-1);
+  }
 
   fuse_fill_dir_t filler = (fuse_fill_dir_t)batonp->fillerp;
-  if (filler(batonp->nodename_listp, batonp->nodename,
-		     NULL /* XXX struct stat */, 0) == 1) {
+  if (filler(batonp->nodename_listp, batonp->nodename, &stat, 0) == 1) {
     warnx("failed to fill directory list buffer.");
     return (-1);
   };
@@ -212,6 +192,51 @@ tahoe_destroy(void *dummy)
     errx(EXIT_FAILURE, "failed to teminate the http_stub module.");
   }
 }
+
+static int
+tahoefs_tstat_to_stat(const tahoefs_stat_t *tstatp, struct stat *statp)
+{
+  assert(tstatp != NULL);
+  assert(statp != NULL);
+
+  /* node type and size. */
+  switch (tstatp->type) {
+  case TAHOEFS_STAT_TYPE_FILENODE:
+    statp->st_mode = (S_IFREG|S_IRUSR);
+    /* XXX we have no idea about the size of a directory. */
+    statp->st_size = 4096;
+    break;
+  case TAHOEFS_STAT_TYPE_DIRNODE:
+    statp->st_mode = (S_IFDIR|S_IRUSR|S_IXUSR);
+    statp->st_size = tstatp->size;
+    break;
+  default:
+    warn("unknown tahoefs stat type %d.", tstatp->type);
+    return (-1);
+  }
+
+  /* node modes. */
+  if (tstatp->mutable) {
+    statp->st_mode = (statp->st_mode|S_IWUSR);
+  }
+
+  /* # of hard links. */
+  statp->st_nlink = 1;
+
+  /* uid and gid. */
+  statp->st_uid = getuid();
+  statp->st_gid = getgid();
+
+  /* # of 512B blocks allocated.  does it make any sense to set it? */
+  statp->st_blocks = 0;
+
+  /* timestamps. */
+  statp->st_atime = statp->st_ctime = statp->st_mtime
+    = tstatp->link_modification_time;
+
+  return (0);
+}
+
 
 static const char *
 tahoe_default_root_cap(void)

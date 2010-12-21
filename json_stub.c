@@ -144,15 +144,12 @@ json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
 
   /* "linkcrtime" and "linkmotime" keys. */
   if (jmeta_tahoep) {
-    double time;
     struct json_object *jtimep;
     jtimep = json_object_object_get(jmeta_tahoep, "linkcrtime");
-    time = json_object_get_double(jtimep);
-    tstatp->link_creation_time = (time_t)time;
+    tstatp->link_creation_time = json_object_get_double(jtimep);
 
     jtimep = json_object_object_get(jmeta_tahoep, "linkmotime");
-    time = json_object_get_double(jtimep);
-    tstatp->link_modification_time = (time_t)time;
+    tstatp->link_modification_time = json_object_get_double(jtimep);
   }
 
   /* release the parsed JSON structure. */

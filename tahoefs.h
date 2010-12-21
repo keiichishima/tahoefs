@@ -46,8 +46,8 @@ typedef struct tahoefs_stat {
   char verify_uri[TAHOEFS_CAPABILITY_SIZE];
   size_t size;
   int mutable;
-  time_t link_creation_time;
-  time_t link_modification_time;
+  double link_creation_time;
+  double link_modification_time;
 } tahoefs_stat_t;
 
 typedef struct tahoefs_readdir_baton {
