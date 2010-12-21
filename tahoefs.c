@@ -154,7 +154,7 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
   /* convert the JSON data to tahoefs metadata. */
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
-  if (json_stub_json_to_metadata(batonp->infop, &tstat) == -1) {
+  if (json_stub_jsonstring_to_tstat(batonp->infop, &tstat) == -1) {
     warnx("failed to convert JSON stat data to tahoefs stat.");
     return (-1);
   }

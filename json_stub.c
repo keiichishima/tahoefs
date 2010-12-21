@@ -36,33 +36,50 @@
 #include "tahoefs.h"
 #include "json_stub.h"
 
+static int json_stub_json_to_tstat(struct json_object *, tahoefs_stat_t *);
+
 int
-json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
+json_stub_jsonstring_to_tstat(const char *jsons, tahoefs_stat_t *tstatp)
 {
-  assert(json != NULL);
+  assert(jsons != NULL);
   assert(tstatp != NULL);
 
   /* parse the node information. */
   struct json_object *jnodeinfop;
-  jnodeinfop = json_tokener_parse(json);
+  jnodeinfop = json_tokener_parse(jsons);
   if (jnodeinfop == NULL) {
     warnx("failed to parse the node information in JSON format.");
     return (-1);
   }
 
-  /* the first entry of jnodeinfop always specifies nodetype. */
-  struct json_object *jnodetypep;
-  jnodetypep = json_object_array_get_idx(jnodeinfop, 0);
-  if (jnodetypep == NULL) {
-    warnx("no node type information exists.");
+  if (json_stub_json_to_tstat(jnodeinfop, tstatp) == -1) {
+    warnx("failed to convert JSON data to tahoefs_stat_t{}.");
     json_object_put(jnodeinfop);
+    return (-1);
+  }
+
+  json_object_put(jnodeinfop);
+
+  return (0);
+}
+
+static int
+json_stub_json_to_tstat(struct json_object *jsonp, tahoefs_stat_t *tstatp)
+{
+  assert(jsonp != NULL);
+  assert(tstatp != NULL);
+
+  /* the first entry of jsonp always specifies nodetype. */
+  struct json_object *jnodetypep;
+  jnodetypep = json_object_array_get_idx(jsonp, 0);
+  if (jnodetypep == NULL) {
+    warnx("node type information is missing.");
     return (-1);
   }
   const char *nodetype;
   nodetype = json_object_get_string(jnodetypep);
   if (nodetype == NULL) {
-    warnx("failed to convert JSON string to string.");
-    json_object_put(jnodeinfop);
+    warnx("failed to convert JSON nodetype string to C string.");
     return (-1);
   }
   if (strcmp(nodetype, "dirnode") == 0) {
@@ -70,73 +87,68 @@ json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
   } else if (strcmp(nodetype, "filenode") == 0) {
     tstatp->type = TAHOEFS_STAT_TYPE_FILENODE;
   } else {
-    warnx("unknown file mode."); 
-    json_object_put(jnodeinfop);
+    warnx("unknown nodetype (%s).", nodetype); 
     return (-1);
   }
 
-  /* the second entry of jnodeinfop contains node specific data. */
-  struct json_object *jfileinfop;
-  jfileinfop = json_object_array_get_idx(jnodeinfop, 1);
-  if (jfileinfop == NULL) {
-    warnx("no fileinfo exists.");
-    json_object_put(jnodeinfop);
+  /* the second entry of jsonp contains node specific data. */
+  struct json_object *jnodeinfop;
+  jnodeinfop = json_object_array_get_idx(jsonp, 1);
+  if (jnodeinfop == NULL) {
+    warnx("node information is missing.");
     return (-1);
   }
 
 #ifdef DEBUG
-  printf("nodeinfo = %s\n", json_object_to_json_string(jfileinfop));
+  printf("nodeinfo = %s\n", json_object_to_json_string(jnodeinfop));
 #endif
 
-  /* "metadata" and "metadata":{"tahoe"} exist only in filenode. */
+  /* "metadata" and "metadata":{"tahoe"} exist only in a file node. */
   struct json_object *jmetap = NULL;
   struct json_object *jmeta_tahoep = NULL;
-  jmetap = json_object_object_get(jfileinfop, "metadata");
+  jmetap = json_object_object_get(jnodeinfop, "metadata");
   if (jmetap) {
     jmeta_tahoep = json_object_object_get(jmetap, "tahoe");
   }
 
   /* "size" key. */
   struct json_object *jsizep;
-  jsizep = json_object_object_get(jfileinfop, "size");
+  jsizep = json_object_object_get(jnodeinfop, "size");
   if (jsizep) {
     tstatp->size = json_object_get_int(jsizep);
   } else {
-    /* unknown. maybe directory. */
+    /* no "size" entry.  maybe this node is a directory. */
     tstatp->size = 0;
   }
 
   /* "mutable" key. */
   struct json_object *jmutablep;
-  jmutablep = json_object_object_get(jfileinfop, "mutable");
+  jmutablep = json_object_object_get(jnodeinfop, "mutable");
   if (jmutablep == NULL) {
     warnx("no mutable key exist.");
-    json_object_put(jnodeinfop);
     return (-1);
   }
   tstatp->mutable = json_object_get_boolean(jmutablep);
 
   /* uri keys. */
   struct json_object *jurip;
-  jurip = json_object_object_get(jfileinfop, "ro_uri");
+  jurip = json_object_object_get(jnodeinfop, "ro_uri");
   if (jurip == NULL) {
     warnx("no ro_uri key exist.");
-    json_object_put(jnodeinfop);
     return (-1);
   }
   strncpy(tstatp->ro_uri, json_object_get_string(jurip),
 	  TAHOEFS_CAPABILITY_SIZE);
 
-  jurip = json_object_object_get(jfileinfop, "verify_uri");
+  jurip = json_object_object_get(jnodeinfop, "verify_uri");
   if (jurip == NULL) {
     warnx("no verify_uri key exist.");
-    json_object_put(jnodeinfop);
     return (-1);
   }
   strncpy(tstatp->verify_uri, json_object_get_string(jurip),
 	  TAHOEFS_CAPABILITY_SIZE);
 
-  jurip = json_object_object_get(jfileinfop, "rw_uri");
+  jurip = json_object_object_get(jnodeinfop, "rw_uri");
   if (jurip) {
     strncpy(tstatp->verify_uri, json_object_get_string(jurip),
 	    TAHOEFS_CAPABILITY_SIZE);
@@ -151,9 +163,6 @@ json_stub_json_to_metadata(const char *json, tahoefs_stat_t *tstatp)
     jtimep = json_object_object_get(jmeta_tahoep, "linkmotime");
     tstatp->link_modification_time = json_object_get_double(jtimep);
   }
-
-  /* release the parsed JSON structure. */
-  json_object_put(jnodeinfop);
 
   return (0);
 }

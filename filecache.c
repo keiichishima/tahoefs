@@ -86,7 +86,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
   }
 
   /* convert the infop (in JSON) to tahoefs_stat_t{} structure. */
-  if (json_stub_json_to_metadata(remote_infop, tstatp) == -1) {
+  if (json_stub_jsonstring_to_tstat(remote_infop, tstatp) == -1) {
     warnx("failed to convert JSON data to tahoefs stat structure.");
     free(remote_infop);
     return (-1);
@@ -121,7 +121,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
     }
 
     /* convert the info to tahoefs_stat_t{} structure. */
-    if (json_stub_json_to_metadata(cached_infop, &cached_tstat) == -1) {
+    if (json_stub_jsonstring_to_tstat(cached_infop, &cached_tstat) == -1) {
       warn("failed to convert cached JSON string at %s to tahoefs_stat_t.",
 	   cached_path);
       free(cached_infop);
