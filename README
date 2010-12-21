@@ -80,14 +80,14 @@ the web-API server running locally.  For detailed instruction of how
 to install and run a Tahoe-LAFS client, please read the installation
 manual distributed with the Tahoe-LAFS program.
 
-After started running your Tahoe-LAFS client, create 'tahoe:' alias
+After started running your Tahoe-LAFS client, create 'tahoe' alias
 using the tahoe program, if you don't have it yet.  The tahoe program
 is a python script distributed with the original Tahoe-LAFS package.
-The 'tahoe:' alias is the default root directory of the tahoefs
-program when no command line option is specified.  For example, the
-following command will create the 'tahoe:' alias.
+The 'tahoe' alias is the default root directory of the tahoefs program
+when no command line option is specified.  For example, the following
+command will create the 'tahoe' alias.
 
-  $ tahoe create-alias tahoe:
+  $ tahoe create-alias tahoe
 
 Once you have set up your Tahoe-LAFS client, create a mount point
 somewhere in your local filesystem, and type as follows.
@@ -100,3 +100,11 @@ under the MOUNTPOINT directory.
 There are some command line options to change the behavior of the
 tahoefs program.  Providing the '-h' option to the tahoefs program
 will show you available options.
+
+
+====
+TODO
+====
+
+- make the filesystem writable.
+- support offline operation.
