@@ -37,6 +37,7 @@
 #include "json_stub.h"
 
 static int json_stub_json_to_tstat(struct json_object *, tahoefs_stat_t *);
+static int json_stub_get_nodetype(struct json_object *);
 
 int
 json_stub_jsonstring_to_tstat(const char *jsons, tahoefs_stat_t *tstatp)
@@ -99,10 +100,6 @@ json_stub_json_to_tstat(struct json_object *jsonp, tahoefs_stat_t *tstatp)
     return (-1);
   }
 
-#ifdef DEBUG
-  printf("nodeinfo = %s\n", json_object_to_json_string(jnodeinfop));
-#endif
-
   /* "metadata" and "metadata":{"tahoe"} exist only in a file node. */
   struct json_object *jmetap = NULL;
   struct json_object *jmeta_tahoep = NULL;
@@ -150,7 +147,7 @@ json_stub_json_to_tstat(struct json_object *jsonp, tahoefs_stat_t *tstatp)
 
   jurip = json_object_object_get(jnodeinfop, "rw_uri");
   if (jurip) {
-    strncpy(tstatp->verify_uri, json_object_get_string(jurip),
+    strncpy(tstatp->rw_uri, json_object_get_string(jurip),
 	    TAHOEFS_CAPABILITY_SIZE);
   }
 
@@ -167,6 +164,35 @@ json_stub_json_to_tstat(struct json_object *jsonp, tahoefs_stat_t *tstatp)
   return (0);
 }
 
+static int
+json_stub_get_nodetype(struct json_object *jnodeinfop)
+{
+  assert(jnodeinfop != NULL);
+
+  struct json_object *jnodetypep;
+  jnodetypep = json_object_array_get_idx(jnodeinfop, 0);
+  if (jnodetypep == NULL) {
+    warnx("no node type information exists.");
+    return (-1);
+  }
+  const char *nodetype;
+  nodetype = json_object_get_string(jnodetypep);
+  if (nodetype == NULL) {
+    warnx("failed to convert JSON string to string.");
+    return (-1);
+  }
+
+  /* check node type. */
+  if (strcmp(nodetype, "dirnode") == 0) {
+    return (TAHOEFS_STAT_TYPE_DIRNODE);
+  } else if (strcmp(nodetype, "filenode") == 0) {
+    return (TAHOEFS_STAT_TYPE_FILENODE);
+  }
+
+  return (TAHOEFS_STAT_TYPE_UNKNOWN);
+}
+
+
 int
 json_stub_iterate_children(void *buf, void *fillerp, const char *json,
 			   json_stub_iterate_children_callback_t callback)
@@ -182,25 +208,11 @@ json_stub_iterate_children(void *buf, void *fillerp, const char *json,
     return (-1);
   }
 
-  /* the first entry of jnodeinfop always specifies nodetype. */
-  struct json_object *jnodetypep;
-  jnodetypep = json_object_array_get_idx(jnodeinfop, 0);
-  if (jnodetypep == NULL) {
-    warnx("no node type information exists.");
+  /* check if this node is a directory. */
+  int nodetype = json_stub_get_nodetype(jnodeinfop);
+  if (nodetype != TAHOEFS_STAT_TYPE_DIRNODE) {
+    warn("this is not a dirnode.");
     json_object_put(jnodeinfop);
-    return (-1);
-  }
-  const char *nodetype;
-  nodetype = json_object_get_string(jnodetypep);
-  if (nodetype == NULL) {
-    warnx("failed to convert JSON string to string.");
-    json_object_put(jnodeinfop);
-    return (-1);
-  }
-  if (strcmp(nodetype, "dirnode") != 0) {
-    warnx("this is not a dirnode.");
-    json_object_put(jnodeinfop);
-    return (-1);
   }
 
   /* the second entry of jnodeinfop contains node specific data. */
@@ -237,4 +249,62 @@ json_stub_iterate_children(void *buf, void *fillerp, const char *json,
   json_object_put(jnodeinfop);
 
   return (0);
+}
+
+int
+json_stub_extract_child(const char *child_name, char **child_jsons,
+			const char *parent_jsons)
+{
+  assert(child_name != NULL);
+  assert(child_jsons != NULL);
+  assert(*child_jsons == NULL);
+  assert(parent_jsons != NULL);
+
+  /* parse the dirnode information. */
+  struct json_object *jnodeinfop;
+  jnodeinfop = json_tokener_parse(parent_jsons);
+  if (jnodeinfop == NULL) {
+    warnx("failed to parse the dirnode information in JSON format.");
+    return (-1);
+  }
+
+  /* check if this node is a directory. */
+  int nodetype = json_stub_get_nodetype(jnodeinfop);
+  if (nodetype != TAHOEFS_STAT_TYPE_DIRNODE) {
+    warn("this is not a dirnode.");
+    json_object_put(jnodeinfop);
+  }
+
+  /* the second entry of jnodeinfop contains node specific data. */
+  struct json_object *jfileinfop;
+  jfileinfop = json_object_array_get_idx(jnodeinfop, 1);
+  if (jfileinfop == NULL) {
+    warnx("no fileinfo exists.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+
+  /* children exist only in dirnode. */
+  struct json_object *jchildrenp = NULL;
+  jchildrenp = json_object_object_get(jfileinfop, "children");
+  if (jchildrenp == NULL) {
+    warnx("no children key in a dirnode fileinfo.");
+    json_object_put(jnodeinfop);
+    return (-1);
+  }
+  
+  struct json_object_iter iter;
+  json_object_object_foreachC(jchildrenp, iter) {
+    if (strcmp(child_name, iter.key) == 0) {
+      /* found. */
+      *child_jsons = strdup(json_object_to_json_string(iter.val));
+      json_object_put(jnodeinfop);
+      return (0);
+    }
+  }
+
+  json_object_put(jnodeinfop);
+
+  /* not found. */
+  return (-1);
 }

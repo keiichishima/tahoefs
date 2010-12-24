@@ -31,5 +31,6 @@ typedef int (*json_stub_iterate_children_callback_t)
 int json_stub_jsonstring_to_tstat(const char *, tahoefs_stat_t *);
 int json_stub_iterate_children(void *, void *, const char *,
 			       json_stub_iterate_children_callback_t);
+int json_stub_extract_child(const char *, char **, const char *);
 
 #endif

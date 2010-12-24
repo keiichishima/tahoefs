@@ -68,6 +68,8 @@ static void tahoefs_usage(const char *);
 static int tahoefs_opt_proc(void *, const char *, int, struct fuse_args *);
 static int tahoefs_tstat_to_stat(const tahoefs_stat_t *, struct stat *);
 
+static void tahoefs_tstat_print(const tahoefs_stat_t *);
+
 static struct fuse_operations tahoe_oper = {
   .init		= tahoe_init,
   .destroy	= tahoe_destroy,
@@ -158,6 +160,8 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
     warnx("failed to convert JSON stat data to tahoefs stat.");
     return (-1);
   }
+
+  tahoefs_tstat_print(&tstat);
   
   struct stat stat;
   memset(&stat, 0, sizeof(struct stat));
@@ -237,6 +241,31 @@ tahoefs_tstat_to_stat(const tahoefs_stat_t *tstatp, struct stat *statp)
   return (0);
 }
 
+static void tahoefs_tstat_print(const tahoefs_stat_t *tstatp)
+{
+  if (config.debug) {
+    printf("tahoe_stat_t (%p)\n", tstatp);
+    switch (tstatp->type) {
+    case TAHOEFS_STAT_TYPE_DIRNODE:
+      printf("  type: directory\n");
+      break;
+    case TAHOEFS_STAT_TYPE_FILENODE:
+      printf("  type: file\n");
+      break;
+    default:
+      printf("  type: unknown\n");
+    }
+    printf("  ro_uri: %s\n", tstatp->ro_uri);
+    printf("  verify_uri: %s\n", tstatp->verify_uri);
+    printf("  rw_uri: %s\n", tstatp->rw_uri);
+    printf("  size: %ld\n", tstatp->size);
+    printf("  mutable: %d\n", tstatp->mutable);
+    printf("  link_cr_time: %f\n", tstatp->link_creation_time);
+    printf("  link_mo_time: %f\n", tstatp->link_modification_time);
+  }
+}
+
+
 
 static const char *
 tahoe_default_root_cap(void)
@@ -294,12 +323,20 @@ tahoe_default_root_cap(void)
   return (NULL);
 }
 
+enum {
+  OPTKEY_DEBUG,
+  OPTKEY_HELP
+};
 static int
 tahoefs_opt_proc(void *data, const char *arg, int key,
 		 struct fuse_args *outargs)
 {
   switch (key) {
-  case 0:
+  case OPTKEY_DEBUG:
+    config.debug = 1;
+    break;
+
+  case OPTKEY_HELP:
     tahoefs_usage(outargs->argv[0]);
     fuse_opt_add_arg(outargs, "-ho");
     exit(1);
@@ -319,8 +356,9 @@ static const struct fuse_opt tahoefs_opts[] = {
   TAHOEFS_OPT("--port=%s",	webapi_port),
   TAHOEFS_OPT("-c %s",		filecache_dir),
   TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
-  FUSE_OPT_KEY("-h",		0),
-  FUSE_OPT_KEY("--help",	0),
+  FUSE_OPT_KEY("-d",            OPTKEY_DEBUG),
+  FUSE_OPT_KEY("-h",		OPTKEY_HELP),
+  FUSE_OPT_KEY("--help",	OPTKEY_HELP),
   FUSE_OPT_END
 };
 

@@ -1,4 +1,4 @@
-CFLAGS	= -Wall -g -DDEBUG
+CFLAGS	= -Wall -g
 CFLAGS	+= $(shell pkg-config fuse --cflags)
 CFLAGS	+= $(shell pkg-config json --cflags)
 LDFLAGS	+= $(shell curl-config --cflags)

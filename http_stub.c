@@ -174,9 +174,7 @@ http_stub_get_to_memory(const char *url, http_stub_get_baton_t *responsep)
   /* check HTTP response code. */
   if (response_code != 200) {
     /* treat all the response codes other than 200 as no existent entry. */
-#ifdef DEBUG
     warnx("received HTTP error response %ld.", response_code);
-#endif
     return (-1);
   }
   if (responsep->datap == NULL) {
@@ -305,9 +303,7 @@ http_stub_get_to_file(const char *url, const char *local_path)
   /* check HTTP response code. */
   if (response_code != 200) {
     /* treat all the response codes other than 200 as an error. */
-#ifdef DEBUG
     warnx("received HTTP error response %ld.", response_code);
-#endif
     /* remove an incomplete file. */
     unlink(local_path);
     return (-1);

@@ -32,6 +32,7 @@ typedef struct tahoefs_global_config {
   const char *webapi_server;
   const char *webapi_port;
   const char *filecache_dir;
+  int debug;
 } tahoefs_global_config_t;
 extern tahoefs_global_config_t config;
 
@@ -56,6 +57,13 @@ typedef struct tahoefs_readdir_baton {
   void *nodename_listp;
   void *fillerp;
 } tahoefs_readdir_baton_t;
+
+#define DEBUG(format) do {		\
+    if (config.debug) printf(format);	\
+  } while (0);
+#define DEBUGV(format, args...) do {		\
+    if (config.debug) printf(format, args);	\
+  } while (0);
 
 #endif
 
