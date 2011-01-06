@@ -61,6 +61,7 @@ static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
 			 struct fuse_file_info *);
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
 static int tahoe_mkdir(const char *, mode_t);
+static int tahoe_rmdir(const char *);
 static void *tahoe_init(struct fuse_conn_info *);
 static void tahoe_destroy(void *);
 
@@ -79,6 +80,7 @@ static struct fuse_operations tahoe_oper = {
   .read		= tahoe_read,
   .readdir	= tahoe_readdir,
   .mkdir	= tahoe_mkdir,
+  .rmdir	= tahoe_rmdir,
 };
 
 static int tahoe_getattr(const char *path, struct stat *statp)
@@ -187,6 +189,17 @@ tahoe_mkdir(const char *path, mode_t mode)
   mode_t tahoe_mode = S_IFDIR|S_IRWXU;
   if (filecache_mkdir(path, tahoe_mode) == -1) {
     warnx("failed to create a directory %s", path);
+    return (-1);
+  }
+
+  return (0);
+}
+
+static int
+tahoe_rmdir(const char *path)
+{
+  if (filecache_rmdir(path) == -1) {
+    warnx("failed to remove a directory %s", path);
     return (-1);
   }
 

@@ -41,6 +41,7 @@
 #define URL_GET_INFO "http://%s:%s/uri/%s%s?t=json"
 #define URL_READ_FILE "http://%s:%s/uri/%s%s"
 #define URL_MKDIR "http://%s:%s/uri/%s%s?%s"
+#define URL_RMDIR "http://%s:%s/uri/%s%s"
 
 typedef struct http_stub_get_baton {
   u_int8_t *datap;
@@ -53,6 +54,7 @@ static size_t http_stub_get_to_memory_callback(void *, size_t, size_t,
 static int http_stub_get_to_file(const char *, const char *);
 static size_t http_stub_get_to_file_callback(void *, size_t, size_t, void *);
 static int http_stub_put(const char *);
+static int http_stub_delete(const char *);
 
 int
 http_stub_initialize(void)
@@ -382,6 +384,64 @@ http_stub_put(const char *url)
   ret = curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE, 0);
   if (ret != CURLE_OK) {
     warnx("failed to set filesize 0. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_perform(curl_handle);
+  if (ret != CURLE_OK) {
+    warnx("failed to perform CURL operation for %s. (CURL: %s)",
+	  url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  curl_easy_cleanup(curl_handle);
+
+  return (0);
+}
+
+int
+http_stub_rmdir(const char *path)
+{
+  assert(path != NULL);
+
+  char tahoe_url[MAXPATHLEN];
+  tahoe_url[0] = '\0';
+  snprintf(tahoe_url, sizeof(tahoe_url), URL_RMDIR, config.webapi_server,
+	   config.webapi_port, config.root_cap, path);
+
+  if (http_stub_delete(tahoe_url) == -1) {
+    warnx("failed to issue a DELETE request for URL %s (%s)", tahoe_url);
+    return (-1);
+  }
+
+  return (0);
+}
+
+static int
+http_stub_delete(const char *url)
+{
+  assert(url != NULL);
+
+  CURL *curl_handle;
+  if ((curl_handle = curl_easy_init()) == NULL) {
+    warnx("failed to initialize the CURL easy interface.");
+    return (-1);
+  }
+
+  CURLcode ret;
+  ret = curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+  if (ret != CURLE_OK) {
+    warnx("failed to set URL %s. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "DELETE");
+  if (ret != CURLE_OK) {
+    warnx("failed to set DELETE operation. (CURL: %s)", url,
+	  curl_easy_strerror(ret));
     curl_easy_cleanup(curl_handle);
     return (-1);
   }

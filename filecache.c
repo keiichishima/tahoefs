@@ -371,6 +371,19 @@ filecache_mkdir(const char *path, mode_t mode)
   return (0);
 }
 
+int
+filecache_rmdir(const char *path)
+{
+  assert(path != NULL);
+
+  if (http_stub_rmdir(path) == -1) {
+    warnx("failed to remove a directory %s via HTTP", path);
+    return (-1);
+  }
+
+  return (0);
+}
+
 static int
 filecache_get_cache_stat(const char *cached_path, struct stat *statp)
 {

@@ -28,5 +28,6 @@
 int filecache_getattr(const char *, tahoefs_stat_t *);
 int filecache_read(const char *, char *, size_t, off_t);
 int filecache_mkdir(const char *, mode_t);
+int filecache_rmdir(const char *);
 
 #endif
