@@ -430,6 +430,7 @@ filecache_cache_directory(const char *remote_path, const char *cached_path,
     size_t info_size;
     if (http_stub_get_info(remote_path, &infop, &info_size) == -1) {
       warnx("failed to get nodeinfo of the file %s.", cached_path);
+      rmdir(cached_path);
       return (-1);
     }
   } else {
