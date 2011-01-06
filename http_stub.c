@@ -40,6 +40,7 @@
 
 #define URL_GET_INFO "http://%s:%s/uri/%s%s?t=json"
 #define URL_READ_FILE "http://%s:%s/uri/%s%s"
+#define URL_MKDIR "http://%s:%s/uri/%s%s?%s"
 
 typedef struct http_stub_get_baton {
   u_int8_t *datap;
@@ -51,6 +52,7 @@ static size_t http_stub_get_to_memory_callback(void *, size_t, size_t,
 					       void *);
 static int http_stub_get_to_file(const char *, const char *);
 static size_t http_stub_get_to_file_callback(void *, size_t, size_t, void *);
+static int http_stub_put(const char *);
 
 int
 http_stub_initialize(void)
@@ -324,4 +326,75 @@ http_stub_get_to_file_callback(void *newdatap, size_t size, size_t nmemb,
 {
   int written = fwrite(newdatap, size, nmemb, (FILE *)stream);
   return (written);
+}
+
+int
+http_stub_mkdir(const char *path, int ismutable)
+{
+  assert(path != NULL);
+
+  const char *mkdir_opt;
+  if (ismutable)
+    mkdir_opt = "t=mkdir";
+  else
+    mkdir_opt = "t=mkdir-immutable";
+
+  char tahoe_url[MAXPATHLEN];
+  tahoe_url[0] = '\0';
+  snprintf(tahoe_url, sizeof(tahoe_url), URL_MKDIR, config.webapi_server,
+	   config.webapi_port, config.root_cap, path, mkdir_opt);
+
+  if (http_stub_put(tahoe_url) == -1) {
+    warnx("failed to issue a PUT request for URL %s (%s)", tahoe_url);
+    return (-1);
+  }
+
+  return (0);
+}
+
+static int
+http_stub_put(const char *url)
+{
+  assert(url != NULL);
+
+  CURL *curl_handle;
+  if ((curl_handle = curl_easy_init()) == NULL) {
+    warnx("failed to initialize the CURL easy interface.");
+    return (-1);
+  }
+
+  CURLcode ret;
+  ret = curl_easy_setopt(curl_handle, CURLOPT_UPLOAD, 1L);
+  if (ret != CURLE_OK) {
+    warnx("failed to specifu UPLOAD option (CURL: %s)",
+	  curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+  if (ret != CURLE_OK) {
+    warnx("failed to set URL %s. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE, 0);
+  if (ret != CURLE_OK) {
+    warnx("failed to set filesize 0. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_perform(curl_handle);
+  if (ret != CURLE_OK) {
+    warnx("failed to perform CURL operation for %s. (CURL: %s)",
+	  url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  curl_easy_cleanup(curl_handle);
+
+  return (0);
 }

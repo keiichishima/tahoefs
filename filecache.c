@@ -358,6 +358,19 @@ filecache_read(const char *path, char *buf, size_t size, off_t offset)
   return (read);
 }
 
+int
+filecache_mkdir(const char *path, mode_t mode)
+{
+  assert(path != NULL);
+
+  if (http_stub_mkdir(path, (mode & S_IWUSR)) == -1) {
+    warnx("failed to create a directory %s via HTTP", path);
+    return (-1);
+  }
+
+  return (0);
+}
+
 static int
 filecache_get_cache_stat(const char *cached_path, struct stat *statp)
 {
