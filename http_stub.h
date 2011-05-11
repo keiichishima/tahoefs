@@ -28,9 +28,12 @@
 int http_stub_initialize(void);
 int http_stub_terminate(void);
 int http_stub_get_info(const char *, char **, size_t *);
+int http_stub_create(const char *, const char *, int);
 int http_stub_read_file(const char *, const char *);
+int http_stub_flush(const char *, const char *);
+int http_stub_flush2(const char *, const char *);
 int http_stub_mkdir(const char *, int);
-int http_stub_rmdir(const char *);
+int http_stub_unlink_rmdir(const char *);
 
 
 #endif

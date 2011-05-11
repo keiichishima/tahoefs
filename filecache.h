@@ -26,7 +26,13 @@
 #define _FILECACHE_H_
 
 int filecache_getattr(const char *, tahoefs_stat_t *);
-int filecache_read(const char *, char *, size_t, off_t);
+int filecache_get_real_size(const char *, size_t *);
+int filecache_open(const char *, int);
+int filecache_create(const char *, mode_t);
+int filecache_unlink(const char *);
+int filecache_read(const char *, char *, size_t, off_t, int);
+int filecache_write(const char *, const char *, size_t, off_t, int);
+int filecache_flush(const char *, int);
 int filecache_mkdir(const char *, mode_t);
 int filecache_rmdir(const char *);
 

@@ -55,8 +55,13 @@ tahoefs_global_config_t config;
 
 static int tahoe_getattr(const char *, struct stat *);
 static int tahoe_open(const char *, struct fuse_file_info *);
+static int tahoe_create(const char *, mode_t, struct fuse_file_info *);
+static int tahoe_unlink(const char *);
 static int tahoe_read(const char *, char *, size_t, off_t,
 		      struct fuse_file_info *);
+static int tahoe_write(const char *, const char *, size_t, off_t,
+		      struct fuse_file_info *);
+static int tahoe_flush(const char *, struct fuse_file_info *);
 static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
 			 struct fuse_file_info *);
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
@@ -77,7 +82,11 @@ static struct fuse_operations tahoe_oper = {
   .destroy	= tahoe_destroy,
   .getattr	= tahoe_getattr,
   .open		= tahoe_open,
+  .create	= tahoe_create,
+  .unlink	= tahoe_unlink,
   .read		= tahoe_read,
+  .write	= tahoe_write,
+  .flush	= tahoe_flush,
   .readdir	= tahoe_readdir,
   .mkdir	= tahoe_mkdir,
   .rmdir	= tahoe_rmdir,
@@ -88,7 +97,7 @@ static int tahoe_getattr(const char *path, struct stat *statp)
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
   if (filecache_getattr(path, &tstat) == -1) {
-    warnx("failed to get file infor of %s.", path);
+    warnx("failed to get file info of %s.", path);
     return (-ENOENT);
   }
 
@@ -97,20 +106,44 @@ static int tahoe_getattr(const char *path, struct stat *statp)
     return (-ENOENT);
   }
 
+  /* mutable files don't have size information. */
+  if (tstat.mutable && tstat.type == TAHOEFS_STAT_TYPE_FILENODE) {
+    size_t real_size;
+    if (filecache_get_real_size(path, &real_size) == -1) {
+      warnx("failed to get the size of the mutable file %s.", path);
+      return (-ENOENT);
+    }
+    statp->st_size = real_size;
+  }
+
   return (0);
 }
 
 static int tahoe_open(const char *path, struct fuse_file_info *fi)
 {
-  if (fi->flags & (O_WRONLY|O_RDWR|O_APPEND|O_CREAT|O_TRUNC)) {
+  if (filecache_open(path, fi->flags) == -1) {
+    warnx("failed to open a file %s", path);
     return (-EPERM);
   }
 
-  struct stat stbuf;
-  memset(&stbuf, 0, sizeof(struct stat));
-  if (tahoe_getattr(path, &stbuf) == -1) {
-    /* cannot get attribute of the file. */
-    return (-ENOENT);
+  return (0);
+}
+
+static int tahoe_create(const char *path, mode_t mode,
+			struct fuse_file_info *fi)
+{
+  if (filecache_create(path, mode) == -1) {
+    warnx("failed to create a file %s.", path);
+    return (-EPERM);
+  }
+
+  return (0);
+}
+
+static int tahoe_unlink(const char *path)
+{
+  if (filecache_unlink(path) == -1) {
+    warnx("failed to unlink file %s.", path);
   }
 
   return (0);
@@ -119,13 +152,35 @@ static int tahoe_open(const char *path, struct fuse_file_info *fi)
 static int tahoe_read(const char *path, char *buf, size_t size,
 		      off_t offset, struct fuse_file_info *fi)
 {
-  int read = filecache_read(path, buf, size, offset);
+  int read = filecache_read(path, buf, size, offset, fi->flags);
   if (read == -1) {
     warnx("read %ld bytes at %ld from %s failed.", size, offset, path);
     return (-1);
   }
 
   return (read);
+}
+
+static int tahoe_write(const char *path, const char *buf, size_t size,
+		      off_t offset, struct fuse_file_info *fi)
+{
+  int nwritten = filecache_write(path, buf, size, offset, fi->flags);
+  if (nwritten == -1) {
+    warnx("write %ld bytes at %ld to %s failed", size, offset, path);
+    return (-1);
+  }
+
+  return (nwritten);
+}
+
+static int tahoe_flush(const char *path, struct fuse_file_info *fi)
+{
+  if (filecache_flush(path, fi->flags)) {
+    warnx("failed to flush modified contents of %s", path);
+    return (-EPERM);
+  }
+
+  return (0);
 }
 
 static int
@@ -165,8 +220,6 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
     return (-1);
   }
 
-  tahoefs_tstat_print(&tstat);
-  
   struct stat stat;
   memset(&stat, 0, sizeof(struct stat));
   if (tahoefs_tstat_to_stat(&tstat, &stat) == -1) {
@@ -234,12 +287,12 @@ tahoefs_tstat_to_stat(const tahoefs_stat_t *tstatp, struct stat *statp)
   switch (tstatp->type) {
   case TAHOEFS_STAT_TYPE_FILENODE:
     statp->st_mode = (S_IFREG|S_IRUSR);
-    /* XXX we have no idea about the size of a directory. */
-    statp->st_size = 4096;
+    statp->st_size = tstatp->size;
     break;
   case TAHOEFS_STAT_TYPE_DIRNODE:
     statp->st_mode = (S_IFDIR|S_IRUSR|S_IXUSR);
-    statp->st_size = tstatp->size;
+    /* XXX we have no idea about the size of a directory. */
+    statp->st_size = 0;
     break;
   default:
     warn("unknown tahoefs stat type %d.", tstatp->type);

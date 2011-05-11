@@ -45,6 +45,7 @@
 #include "http_stub.h"
 #include "json_stub.h"
 
+#define FILECACHE_SUPPORTED_OPEN_FLAGS (O_RDONLY|O_WRONLY|O_RDWR|O_CREAT|O_TRUNC)
 #define FILECACHE_PATH_TO_CACHED_PATH(path, cached_path) do {	    \
     (cached_path)[0] = '\0';					    \
     if (config.filecache_dir[0] != '/') {			    \
@@ -221,9 +222,6 @@ filecache_getattr_from_parent(const char *path, tahoefs_stat_t *tstatp)
     *(parent_path + 1) = '\0';
   }
 
-  DEBUGV("path = %s\n", path);
-  DEBUGV("parent = %s\n", parent_path);
-
   /* get the parent's remote info. */
   char *remote_infop = NULL; /* must free this before returning. */
   size_t remote_info_size;
@@ -262,7 +260,7 @@ filecache_cached_getattr(const char *cached_path,
   assert(cached_path != NULL);
   assert(cached_tstatp != NULL);
 
-  char *cached_infos;
+  char *cached_infos = NULL;
   if (filecache_get_info_xattr(cached_path, (void **)&cached_infos) == -1) {
     warnx("failed to get info xattr value from %s.", cached_path);
     return (-1);
@@ -333,10 +331,102 @@ filecache_set_info_xattr(const char *cached_path, void *infop, size_t info_size)
 }
 
 int
-filecache_read(const char *path, char *buf, size_t size, off_t offset)
+filecache_get_real_size(const char *path, size_t *real_size)
+{
+  assert(path != NULL);
+  assert(real_size != NULL);
+
+  char cache_path[MAXPATHLEN];
+  FILECACHE_PATH_TO_CACHED_PATH(path, cache_path);
+
+  struct stat stat;
+  memset(&stat, 0, sizeof(struct stat));
+  if (filecache_get_cache_stat(cache_path, &stat) == -1) {
+    if (filecache_cache_file(path, cache_path) == -1) {
+      warnx("failed to cache %s.", path);
+      return (-1);
+    }
+    if (filecache_get_cache_stat(cache_path, &stat) == -1) {
+      warnx("failed to get cache stat of %s.", cache_path);
+      return (-1);
+    }
+  }
+  *real_size = stat.st_size;
+
+  return (0);
+}
+
+int
+filecache_open(const char *path, int flags)
+{
+  assert(path != NULL);
+
+  /* exclude unsupported options. */
+  if (flags && !(flags & FILECACHE_SUPPORTED_OPEN_FLAGS)) {
+      return (-1);
+  }
+
+  /* when the read op is specified, the specified file must exist. */
+  if (flags & (O_RDONLY|O_RDWR)) {
+    tahoefs_stat_t tstat;
+    memset(&tstat, 0, sizeof(tahoefs_stat_t));
+    if (filecache_getattr(path, &tstat) == -1) {
+      /* cannot get attribute of the file. */
+      return (-1);
+    }
+  }
+
+  return (0);
+}
+
+int
+filecache_create(const char *path, mode_t mode)
+{
+  assert(path != NULL);
+
+  char cached_path[MAXPATHLEN];
+  FILECACHE_PATH_TO_CACHED_PATH(path, cached_path);
+
+  int fd = open(cached_path, (O_CREAT|O_TRUNC|O_WRONLY), (S_IRUSR|S_IWUSR));
+  if (fd == -1) {
+    warn("failed to create a file %s", cached_path);
+    return (-1);
+  }
+  close(fd);
+
+  if (http_stub_create(path, cached_path, (mode & S_IWUSR)) == -1) {
+    warnx("failed to create the file %s via HTTP", path);
+    return (-1);
+  }
+
+  filecache_cache_file(path, cached_path);
+
+  return (0);
+}
+
+int
+filecache_unlink(const char *path)
+{
+  assert(path != NULL);
+
+  if (http_stub_unlink_rmdir(path) == -1) {
+    warnx("failed to remove a file %s via HTTP", path);
+    return (-1);
+  }
+
+  return (0);
+}
+
+
+int
+filecache_read(const char *path, char *buf, size_t size, off_t offset,
+	       int flags)
 {
   assert(path != NULL);
   assert(buf != NULL);
+
+  if (flags & O_WRONLY)
+    return (-1);
 
   char cache_path[MAXPATHLEN];
   FILECACHE_PATH_TO_CACHED_PATH(path, cache_path);
@@ -359,6 +449,61 @@ filecache_read(const char *path, char *buf, size_t size, off_t offset)
 }
 
 int
+filecache_write(const char *path, const char *buf, size_t size, off_t offset,
+	       int flags)
+{
+  assert(path != NULL);
+  assert(buf != NULL);
+
+  if (flags & O_RDONLY) {
+    warnx("writing to a file opened as read only: %s", path);
+    return (-1);
+  }
+
+  char cached_path[MAXPATHLEN];
+  FILECACHE_PATH_TO_CACHED_PATH(path, cached_path);
+
+  struct stat stat;
+  memset(&stat, 0, sizeof(struct stat));
+  if (filecache_get_cache_stat(cached_path, &stat) == -1) {
+    filecache_cache_file(path, cached_path);
+    /* error is ignored. */
+  }
+
+  int fd = open(cached_path, O_RDWR);
+  if (fd == -1) {
+    warn("failed to open a cache file %s.", cached_path);
+    return (-1);
+  }
+
+  ssize_t nwritten = pwrite(fd, buf, size, offset);
+  close (fd);
+
+  return (nwritten);
+}
+
+int
+filecache_flush(const char *path, int flags)
+{
+  assert(path != NULL);
+
+  /* read only operation doesn't need to flush anything. */
+  if (flags & O_RDONLY) {
+    return (0);
+  }
+
+  char cached_path[MAXPATHLEN];
+  FILECACHE_PATH_TO_CACHED_PATH(path, cached_path);
+
+  if (http_stub_flush(path, cached_path) == -1) {
+    warnx("failed to flush the contents of %s", path);
+    return (-1);
+  }
+
+  return (0);
+}
+
+int
 filecache_mkdir(const char *path, mode_t mode)
 {
   assert(path != NULL);
@@ -376,7 +521,7 @@ filecache_rmdir(const char *path)
 {
   assert(path != NULL);
 
-  if (http_stub_rmdir(path) == -1) {
+  if (http_stub_unlink_rmdir(path) == -1) {
     warnx("failed to remove a directory %s via HTTP", path);
     return (-1);
   }
@@ -402,6 +547,8 @@ filecache_cache_file(const char *remote_path, const char *cached_path)
 {
   assert(cached_path != NULL);
   assert(remote_path != NULL);
+
+  printf("caching %s to %s\n", remote_path, cached_path);
 
   if (filecache_mkdir_parent(cached_path) == -1) {
     warnx("failed to create a parent directory of %s.", cached_path);
