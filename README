@@ -106,5 +106,5 @@ will show you available options.
 TODO
 ====
 
-- make the filesystem writable.
+- make cache management smarter.
 - support offline operation.
