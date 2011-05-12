@@ -95,11 +95,13 @@ static struct fuse_operations tahoe_oper = {
 static int
 tahoe_getattr(const char *path, struct stat *statp)
 {
+  int errcode = 0;
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
-  if (filecache_getattr(path, &tstat) == -1) {
+  errcode = filecache_getattr(path, &tstat);
+  if (errcode) {
     warnx("failed to get file info of %s.", path);
-    return (-ENOENT);
+    return (-errcode);
   }
 
   if (tahoefs_tstat_to_stat(&tstat, statp) == -1) {
@@ -109,10 +111,12 @@ tahoe_getattr(const char *path, struct stat *statp)
 
   /* mutable files don't have size information. */
   if (tstat.mutable && tstat.type == TAHOEFS_STAT_TYPE_FILENODE) {
+    errcode = 0;
     size_t real_size;
-    if (filecache_get_real_size(path, &real_size) == -1) {
+    errcode = filecache_get_real_size(path, &real_size);
+    if (errcode) {
       warnx("failed to get the size of the mutable file %s.", path);
-      return (-ENOENT);
+      return (-errcode);
     }
     statp->st_size = real_size;
   }
@@ -123,9 +127,11 @@ tahoe_getattr(const char *path, struct stat *statp)
 static int
 tahoe_open(const char *path, struct fuse_file_info *fi)
 {
-  if (filecache_open(path, fi->flags) == -1) {
+  int errcode = 0;
+  errcode = filecache_open(path, fi->flags);
+  if (errcode) {
     warnx("failed to open a file %s", path);
-    return (-EPERM);
+    return (-errcode);
   }
 
   return (0);
@@ -134,9 +140,11 @@ tahoe_open(const char *path, struct fuse_file_info *fi)
 static int
 tahoe_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-  if (filecache_create(path, mode) == -1) {
+  int errcode = 0;
+  errcode = filecache_create(path, mode);
+  if (errcode) {
     warnx("failed to create a file %s.", path);
-    return (-EPERM);
+    return (-errcode);
   }
 
   return (0);
@@ -145,8 +153,11 @@ tahoe_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 static int
 tahoe_unlink(const char *path)
 {
-  if (filecache_unlink(path) == -1) {
+  int errcode = 0;
+  errcode = filecache_unlink(path);
+  if (errcode) {
     warnx("failed to unlink file %s.", path);
+    return (-errcode);
   }
 
   return (0);
@@ -156,13 +167,13 @@ static int
 tahoe_read(const char *path, char *buf, size_t size, off_t offset,
 	   struct fuse_file_info *fi)
 {
-  int read = filecache_read(path, buf, size, offset, fi->flags);
-  if (read == -1) {
+  int nread = filecache_read(path, buf, size, offset, fi->flags);
+  if (nread == -1) {
     warnx("read %ld bytes at %ld from %s failed.", size, offset, path);
     return (-1);
   }
 
-  return (read);
+  return (nread);
 }
 
 static int
@@ -181,9 +192,11 @@ tahoe_write(const char *path, const char *buf, size_t size, off_t offset,
 static int
 tahoe_flush(const char *path, struct fuse_file_info *fi)
 {
-  if (filecache_flush(path, fi->flags)) {
+  int errcode = 0;
+  errcode = filecache_flush(path, fi->flags);
+  if (errcode) {
     warnx("failed to flush modified contents of %s", path);
-    return (-EPERM);
+    return (-errcode);
   }
 
   return (0);
@@ -204,7 +217,7 @@ tahoe_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 				 tahoe_readdir_callback) == -1) {
     warnx("failed to iterate child nodes of %s.", path);
     free(infop);
-    return (-1);
+    return (-EIO);
   }
 
   /* free the memory which keeps the HTTP response body. */
@@ -245,10 +258,12 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
 static int
 tahoe_mkdir(const char *path, mode_t mode)
 {
+  int errcode = 0;
   mode_t tahoe_mode = S_IFDIR|S_IRWXU;
-  if (filecache_mkdir(path, tahoe_mode) == -1) {
+  errcode = filecache_mkdir(path, tahoe_mode);
+  if (errcode) {
     warnx("failed to create a directory %s", path);
-    return (-1);
+    return (-errcode);
   }
 
   return (0);
@@ -257,9 +272,11 @@ tahoe_mkdir(const char *path, mode_t mode)
 static int
 tahoe_rmdir(const char *path)
 {
-  if (filecache_rmdir(path) == -1) {
+  int errcode = 0;
+  errcode = filecache_rmdir(path);
+  if (errcode) {
     warnx("failed to remove a directory %s", path);
-    return (-1);
+    return (-errcode);
   }
 
   return (0);

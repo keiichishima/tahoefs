@@ -88,14 +88,14 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
     if (filecache_uncache_node(cached_path) == -1) {
       warnx("failed to remove a cache for %s", cached_path);
     }
-    return (-1);
+    return (ENOENT);
   }
 
   /* convert the infop (in JSON) to tahoefs_stat_t{} structure. */
   if (json_stub_jsonstring_to_tstat(remote_infop, tstatp) == -1) {
     warnx("failed to convert JSON data to tahoefs stat structure");
     free(remote_infop);
-    return (-1);
+    return (EIO);
   }
 
   /* treat "/" as a special case. */
@@ -104,7 +104,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
 				  remote_info_size) == -1) {
       warnx("failed to store attr info to the root (/).");
       free(remote_infop);
-      return (-1);
+      return (EIO);
     }
     free(remote_infop);
     return (0);
@@ -119,7 +119,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
      * information) to get full information.
      */
     if (filecache_getattr_from_parent(path, tstatp) == -1) {
-      return (-1);
+      return (EIO);
     }
 
     struct stat cached_stat;
@@ -133,7 +133,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
       }
       warn("failed to stat %s.", cached_path);
       free(remote_infop);
-      return (-1);
+      return (EIO);
     }
 
     /* something is cached. */
@@ -142,7 +142,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
       if (filecache_uncache_node(cached_path) == -1) {
 	warn("failed to remove cache %s.", cached_path);
 	free(remote_infop);
-	return (-1);
+	return (EIO);
       }
     }
 
@@ -152,7 +152,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
 	== -1) {
       warn("failed to create a cache directory %s.", cached_path);
       free(remote_infop);
-      return (-1);
+      return (EIO);
     }
   } else {
     /* the specified path at remote storage is a file.*/
@@ -166,7 +166,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
       }
       warn("failed to stat %s.", cached_path);
       free(remote_infop);
-      return (-1);
+      return (EIO);
     }
  
     /* something is cached. */
@@ -175,7 +175,7 @@ filecache_getattr(const char *path, tahoefs_stat_t *tstatp)
       if (filecache_uncache_node(cached_path) == -1) {
 	warn("failed to remove cache %s.", cached_path);
 	free(remote_infop);
-	return (-1);
+	return (EIO);
       }
     }
 
@@ -344,11 +344,11 @@ filecache_get_real_size(const char *path, size_t *real_size)
   if (filecache_get_cache_stat(cache_path, &stat) == -1) {
     if (filecache_cache_file(path, cache_path) == -1) {
       warnx("failed to cache %s.", path);
-      return (-1);
+      return (EIO);
     }
     if (filecache_get_cache_stat(cache_path, &stat) == -1) {
       warnx("failed to get cache stat of %s.", cache_path);
-      return (-1);
+      return (EIO);
     }
   }
   *real_size = stat.st_size;
@@ -363,16 +363,18 @@ filecache_open(const char *path, int flags)
 
   /* exclude unsupported options. */
   if (flags && !(flags & FILECACHE_SUPPORTED_OPEN_FLAGS)) {
-      return (-1);
+      return (EINVAL);
   }
 
   /* when the read op is specified, the specified file must exist. */
   if (flags & (O_RDONLY|O_RDWR)) {
     tahoefs_stat_t tstat;
     memset(&tstat, 0, sizeof(tahoefs_stat_t));
-    if (filecache_getattr(path, &tstat) == -1) {
+    int errcode = 0;
+    errcode = filecache_getattr(path, &tstat);
+    if (errcode) {
       /* cannot get attribute of the file. */
-      return (-1);
+      return (errcode);
     }
   }
 
@@ -390,13 +392,13 @@ filecache_create(const char *path, mode_t mode)
   int fd = open(cached_path, (O_CREAT|O_TRUNC|O_WRONLY), (S_IRUSR|S_IWUSR));
   if (fd == -1) {
     warn("failed to create a file %s", cached_path);
-    return (-1);
+    return (errno);
   }
   close(fd);
 
   if (http_stub_create(path, cached_path, (mode & S_IWUSR)) == -1) {
     warnx("failed to create the file %s via HTTP", path);
-    return (-1);
+    return (EIO);
   }
 
   filecache_cache_file(path, cached_path);
@@ -411,12 +413,11 @@ filecache_unlink(const char *path)
 
   if (http_stub_unlink_rmdir(path) == -1) {
     warnx("failed to remove a file %s via HTTP", path);
-    return (-1);
+    return (EIO);
   }
 
   return (0);
 }
-
 
 int
 filecache_read(const char *path, char *buf, size_t size, off_t offset,
@@ -497,7 +498,7 @@ filecache_flush(const char *path, int flags)
 
   if (http_stub_flush(path, cached_path) == -1) {
     warnx("failed to flush the contents of %s", path);
-    return (-1);
+    return (EIO);
   }
 
   return (0);
@@ -510,7 +511,7 @@ filecache_mkdir(const char *path, mode_t mode)
 
   if (http_stub_mkdir(path, (mode & S_IWUSR)) == -1) {
     warnx("failed to create a directory %s via HTTP", path);
-    return (-1);
+    return (-EIO);
   }
 
   return (0);
@@ -523,7 +524,7 @@ filecache_rmdir(const char *path)
 
   if (http_stub_unlink_rmdir(path) == -1) {
     warnx("failed to remove a directory %s via HTTP", path);
-    return (-1);
+    return (EIO);
   }
 
   return (0);
