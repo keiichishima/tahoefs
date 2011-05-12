@@ -47,19 +47,19 @@
 #define URL_MKDIR "http://%s:%s/uri/%s%s%s"
 #define URL_RMDIR "http://%s:%s/uri/%s%s"
 
-typedef struct http_stub_get_baton {
+typedef struct http_stub_writefunc_baton {
   u_int8_t *datap;
   size_t size;
-} http_stub_get_baton_t;
+} http_stub_writefunc_baton_t;
 
-static int http_stub_get_to_memory(const char *, http_stub_get_baton_t *);
-static size_t http_stub_get_to_memory_callback(void *, size_t, size_t,
-					       void *);
+static int http_stub_get_to_memory(const char *, http_stub_writefunc_baton_t *);
+static size_t http_stub_writefunc_callback(void *, size_t, size_t, void *);
 static int http_stub_get_to_file(const char *, const char *);
 static size_t http_stub_get_to_file_callback(void *, size_t, size_t, void *);
-static int http_stub_put(const char *);
+static int http_stub_put(const char *, http_stub_writefunc_baton_t *);
 static int http_stub_delete(const char *);
-static int http_stub_put_from_file(const char *, const char *);
+static int http_stub_put_from_file(const char *, const char *,
+				   http_stub_writefunc_baton_t *);
 static size_t http_stub_put_from_file_callback(void *, size_t, size_t, void *);
 static int http_stub_post_from_file(const char *, const char *);
 
@@ -104,7 +104,7 @@ http_stub_get_info(const char *path, char **infopp, size_t *info_sizep)
   snprintf(tahoe_url, sizeof(tahoe_url), URL_GET_INFO, config.webapi_server,
 	   config.webapi_port, config.root_cap, path);
 
-  http_stub_get_baton_t response;
+  http_stub_writefunc_baton_t response;
   response.datap = malloc(1);
   response.size = 0;
   if (http_stub_get_to_memory(tahoe_url, &response) == -1) {
@@ -125,7 +125,7 @@ http_stub_get_info(const char *path, char **infopp, size_t *info_sizep)
  * specified by the responsep->datap parameter.
  */
 static int
-http_stub_get_to_memory(const char *url, http_stub_get_baton_t *responsep)
+http_stub_get_to_memory(const char *url, http_stub_writefunc_baton_t *responsep)
 {
   assert(url != NULL);
   assert(responsep != NULL);
@@ -148,7 +148,7 @@ http_stub_get_to_memory(const char *url, http_stub_get_baton_t *responsep)
 
   /* get the information of the specified file node. */
   ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
-			 http_stub_get_to_memory_callback);
+			 http_stub_writefunc_callback);
   if (ret != CURLE_OK) {
     warnx("failed to set write function for memory. (CURL: %s)",
 	  curl_easy_strerror(ret));
@@ -203,14 +203,15 @@ http_stub_get_to_memory(const char *url, http_stub_get_baton_t *responsep)
  * batonp->datap will be enlarged whenever necessary.
  */
 static size_t
-http_stub_get_to_memory_callback(void *newdatap, size_t size, size_t nmemb,
-				 void *batonp)
+http_stub_writefunc_callback(void *newdatap, size_t size, size_t nmemb,
+			     void *batonp)
 {
   assert(newdatap != NULL);
   assert(batonp != NULL);
 
   size_t real_size = size * nmemb;
-  http_stub_get_baton_t *responsep = (http_stub_get_baton_t *)batonp;
+  http_stub_writefunc_baton_t *responsep
+    = (http_stub_writefunc_baton_t *)batonp;
   responsep->datap = realloc(responsep->datap, responsep->size + real_size + 1);
   if (responsep->datap == NULL) {
     warnx("failed to reallocate memory for HTTP response.");
@@ -240,10 +241,16 @@ http_stub_create(const char *path, const char *local_path, int ismutable)
   snprintf(tahoe_url, sizeof(tahoe_url), URL_CREATE, config.webapi_server,
 	   config.webapi_port, config.root_cap, path, create_opt);
 
-  if (http_stub_put_from_file(tahoe_url, local_path) == -1) {
+  /* response is ignored though. */
+  http_stub_writefunc_baton_t response;
+  response.datap = malloc(1);
+  response.size = 0;
+  if (http_stub_put_from_file(tahoe_url, local_path, &response) == -1) {
     warnx("failed to issue a PUT request for URL %s", tahoe_url);
     return (-1);
   }
+  if (response.datap)
+    free(response.datap);
 
   return (0);
 }
@@ -378,7 +385,11 @@ http_stub_mkdir(const char *path, int ismutable)
   snprintf(tahoe_url, sizeof(tahoe_url), URL_MKDIR, config.webapi_server,
 	   config.webapi_port, config.root_cap, path, mkdir_opt);
 
-  if (http_stub_put(tahoe_url) == -1) {
+  /* response is ignored though. */
+  http_stub_writefunc_baton_t response;
+  response.datap = malloc(1);
+  response.size = 0;
+  if (http_stub_put(tahoe_url, &response) == -1) {
     warnx("failed to issue a PUT request for URL %s (%s)", tahoe_url);
     return (-1);
   }
@@ -387,7 +398,7 @@ http_stub_mkdir(const char *path, int ismutable)
 }
 
 static int
-http_stub_put(const char *url)
+http_stub_put(const char *url, http_stub_writefunc_baton_t *responsep)
 {
   assert(url != NULL);
 
@@ -416,6 +427,22 @@ http_stub_put(const char *url)
   ret = curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE, 0);
   if (ret != CURLE_OK) {
     warnx("failed to set filesize 0. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
+			 http_stub_writefunc_callback);
+  if (ret != CURLE_OK) {
+    warnx("failed to set write function for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)responsep);
+  if (ret != CURLE_OK) {
+    warnx("failed to set callback baton for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
     curl_easy_cleanup(curl_handle);
     return (-1);
   }
@@ -502,35 +529,23 @@ http_stub_flush(const char *path, const char *local_path)
   snprintf(tahoe_url, sizeof(tahoe_url), URL_WRITE_FILE, config.webapi_server,
 	   config.webapi_port, config.root_cap, path);
 
-  if (http_stub_put_from_file(tahoe_url, local_path) == -1) {
+  /* response is ignored though. */
+  http_stub_writefunc_baton_t response;
+  response.datap = malloc(1);
+  response.size = 0;
+  if (http_stub_put_from_file(tahoe_url, local_path, &response) == -1) {
     warnx("failed to issue a PUT request for URL %s", tahoe_url);
     return (-1);
   }
-
-  return (0);
-}
-
-int
-http_stub_flush2(const char *path, const char *local_path)
-{
-  assert(path != NULL);
-  assert(local_path != NULL);
-
-  char tahoe_url[MAXPATHLEN];
-  tahoe_url[0] = '\0';
-  snprintf(tahoe_url, sizeof(tahoe_url), URL_WRITE_FILE2, config.webapi_server,
-	   config.webapi_port, config.root_cap, path, "?t=upload");
-
-  if (http_stub_post_from_file(tahoe_url, local_path) == -1) {
-    warnx("failed to issue a POST request for URL %s", tahoe_url);
-    return (-1);
-  }
+  if (response.datap)
+    free(response.datap);
 
   return (0);
 }
 
 static int
-http_stub_put_from_file(const char *url, const char *path)
+http_stub_put_from_file(const char *url, const char *path,
+			http_stub_writefunc_baton_t *responsep)
 {
   assert(url != NULL);
   assert(path != NULL);
@@ -562,6 +577,22 @@ http_stub_put_from_file(const char *url, const char *path)
   ret = curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   if (ret != CURLE_OK) {
     warnx("failed to set URL %s. (CURL: %s)", url, curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION,
+			 http_stub_writefunc_callback);
+  if (ret != CURLE_OK) {
+    warnx("failed to set write function for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
+    curl_easy_cleanup(curl_handle);
+    return (-1);
+  }
+  ret = curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)responsep);
+  if (ret != CURLE_OK) {
+    warnx("failed to set callback baton for memory. (CURL: %s)",
+	  curl_easy_strerror(ret));
     curl_easy_cleanup(curl_handle);
     return (-1);
   }
