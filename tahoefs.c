@@ -92,7 +92,8 @@ static struct fuse_operations tahoe_oper = {
   .rmdir	= tahoe_rmdir,
 };
 
-static int tahoe_getattr(const char *path, struct stat *statp)
+static int
+tahoe_getattr(const char *path, struct stat *statp)
 {
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
@@ -119,7 +120,8 @@ static int tahoe_getattr(const char *path, struct stat *statp)
   return (0);
 }
 
-static int tahoe_open(const char *path, struct fuse_file_info *fi)
+static int
+tahoe_open(const char *path, struct fuse_file_info *fi)
 {
   if (filecache_open(path, fi->flags) == -1) {
     warnx("failed to open a file %s", path);
@@ -129,8 +131,8 @@ static int tahoe_open(const char *path, struct fuse_file_info *fi)
   return (0);
 }
 
-static int tahoe_create(const char *path, mode_t mode,
-			struct fuse_file_info *fi)
+static int
+tahoe_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
   if (filecache_create(path, mode) == -1) {
     warnx("failed to create a file %s.", path);
@@ -140,7 +142,8 @@ static int tahoe_create(const char *path, mode_t mode,
   return (0);
 }
 
-static int tahoe_unlink(const char *path)
+static int
+tahoe_unlink(const char *path)
 {
   if (filecache_unlink(path) == -1) {
     warnx("failed to unlink file %s.", path);
@@ -149,8 +152,9 @@ static int tahoe_unlink(const char *path)
   return (0);
 }
 
-static int tahoe_read(const char *path, char *buf, size_t size,
-		      off_t offset, struct fuse_file_info *fi)
+static int
+tahoe_read(const char *path, char *buf, size_t size, off_t offset,
+	   struct fuse_file_info *fi)
 {
   int read = filecache_read(path, buf, size, offset, fi->flags);
   if (read == -1) {
@@ -161,8 +165,9 @@ static int tahoe_read(const char *path, char *buf, size_t size,
   return (read);
 }
 
-static int tahoe_write(const char *path, const char *buf, size_t size,
-		      off_t offset, struct fuse_file_info *fi)
+static int
+tahoe_write(const char *path, const char *buf, size_t size, off_t offset,
+	    struct fuse_file_info *fi)
 {
   int nwritten = filecache_write(path, buf, size, offset, fi->flags);
   if (nwritten == -1) {
@@ -173,7 +178,8 @@ static int tahoe_write(const char *path, const char *buf, size_t size,
   return (nwritten);
 }
 
-static int tahoe_flush(const char *path, struct fuse_file_info *fi)
+static int
+tahoe_flush(const char *path, struct fuse_file_info *fi)
 {
   if (filecache_flush(path, fi->flags)) {
     warnx("failed to flush modified contents of %s", path);
@@ -321,7 +327,8 @@ tahoefs_tstat_to_stat(const tahoefs_stat_t *tstatp, struct stat *statp)
   return (0);
 }
 
-static void tahoefs_tstat_print(const tahoefs_stat_t *tstatp)
+static void
+tahoefs_tstat_print(const tahoefs_stat_t *tstatp)
 {
   if (config.debug) {
     printf("tahoe_stat_t (%p)\n", tstatp);
@@ -344,8 +351,6 @@ static void tahoefs_tstat_print(const tahoefs_stat_t *tstatp)
     printf("  link_mo_time: %f\n", tstatp->link_modification_time);
   }
 }
-
-
 
 static const char *
 tahoe_default_root_cap(void)
@@ -466,7 +471,8 @@ tahoefs_usage(const char *progname)
 "\n", progname);
 }
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
   memset(&config, 0, sizeof(tahoefs_global_config_t));
   config.tahoe_dir = TAHOE_DEFAULT_DIR;
