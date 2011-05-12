@@ -67,6 +67,7 @@ static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
 static int tahoe_mkdir(const char *, mode_t);
 static int tahoe_rmdir(const char *);
+static int tahoe_statfs(const char *, struct statvfs *);
 static void *tahoe_init(struct fuse_conn_info *);
 static void tahoe_destroy(void *);
 
@@ -90,6 +91,7 @@ static struct fuse_operations tahoe_oper = {
   .readdir	= tahoe_readdir,
   .mkdir	= tahoe_mkdir,
   .rmdir	= tahoe_rmdir,
+  .statfs	= tahoe_statfs,
 };
 
 static int
@@ -278,6 +280,21 @@ tahoe_rmdir(const char *path)
     warnx("failed to remove a directory %s", path);
     return (-errcode);
   }
+
+  return (0);
+}
+
+int
+tahoe_statfs(const char *path, struct statvfs *statvfsp)
+{
+  memset(statvfsp, 0, sizeof(struct statvfs));
+  statvfsp->f_bsize = 512;
+  statvfsp->f_frsize = statvfsp->f_bsize;
+  statvfsp->f_blocks = 1024 * 1024;
+  statvfsp->f_bfree = statvfsp->f_blocks;
+  statvfsp->f_bavail = statvfsp->f_blocks;
+  statvfsp->f_flag = ST_NOSUID;
+  statvfsp->f_namemax = 1024;
 
   return (0);
 }
