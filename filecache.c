@@ -161,11 +161,11 @@ filecache_get_info_attr(const char *cached_path, void **infopp)
   assert(*infopp == NULL);
 
   ssize_t info_size;
-  info_size = getxattr(cached_path, FILECACHE_INFO_ATTR, NULL, 0,
+  info_size = getxattr(cached_path, FILECACHE_INFO_ATTR, NULL, 0
 #if defined(__APPLE__)
-		       0,
+		       , 0, 0
 #endif
-		       0);
+		       );
   if (info_size == -1) {
     warn("failed to retreive the size of tahoefs_info attr of %s.",
 	 cached_path);
@@ -173,11 +173,11 @@ filecache_get_info_attr(const char *cached_path, void **infopp)
   }
 
   char *infop = malloc(info_size);
-  info_size = getxattr(cached_path, FILECACHE_INFO_ATTR, infop, info_size,
+  info_size = getxattr(cached_path, FILECACHE_INFO_ATTR, infop, info_size
 #if defined(__APPLE__)
-		       0,
+		       , 0, 0
 #endif
-		       0);
+		       );
   if (info_size == -1) {
     warn("failed to retreive the value of tahoefs_info attr of %s.",
 	 cached_path);
