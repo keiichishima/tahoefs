@@ -1,5 +1,5 @@
 /*
- * Copyright 2010 IIJ Innovation Institute Inc. All rights reserved.
+ * Copyright 2010, 2011 IIJ Innovation Institute Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,8 +28,9 @@
 typedef int (*json_stub_iterate_children_callback_t)
 	(tahoefs_readdir_baton_t *);
 
-int json_stub_json_to_metadata(const char *, tahoefs_stat_t *);
+int json_stub_jsonstring_to_tstat(const char *, tahoefs_stat_t *);
 int json_stub_iterate_children(void *, void *, const char *,
 			       json_stub_iterate_children_callback_t);
+int json_stub_extract_child(const char *, char **, const char *);
 
 #endif

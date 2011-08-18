@@ -1,5 +1,5 @@
 /*
- * Copyright 2010 IIJ Innovation Institute Inc. All rights reserved.
+ * Copyright 2010, 2011 IIJ Innovation Institute Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -55,107 +55,153 @@ tahoefs_global_config_t config;
 
 static int tahoe_getattr(const char *, struct stat *);
 static int tahoe_open(const char *, struct fuse_file_info *);
+static int tahoe_create(const char *, mode_t, struct fuse_file_info *);
+static int tahoe_unlink(const char *);
 static int tahoe_read(const char *, char *, size_t, off_t,
 		      struct fuse_file_info *);
+static int tahoe_write(const char *, const char *, size_t, off_t,
+		      struct fuse_file_info *);
+static int tahoe_flush(const char *, struct fuse_file_info *);
 static int tahoe_readdir(const char *, void *, fuse_fill_dir_t, off_t,
 			 struct fuse_file_info *);
 static int tahoe_readdir_callback(tahoefs_readdir_baton_t *);
+static int tahoe_mkdir(const char *, mode_t);
+static int tahoe_rmdir(const char *);
+static int tahoe_statfs(const char *, struct statvfs *);
 static void *tahoe_init(struct fuse_conn_info *);
 static void tahoe_destroy(void *);
-const char *tahoe_default_root_cap(void);
+
+static const char *tahoe_default_root_cap(void);
+static void tahoefs_usage(const char *);
+static int tahoefs_opt_proc(void *, const char *, int, struct fuse_args *);
+static int tahoefs_tstat_to_stat(const tahoefs_stat_t *, struct stat *);
+
+static void tahoefs_tstat_print(const tahoefs_stat_t *);
 
 static struct fuse_operations tahoe_oper = {
   .init		= tahoe_init,
   .destroy	= tahoe_destroy,
   .getattr	= tahoe_getattr,
   .open		= tahoe_open,
+  .create	= tahoe_create,
+  .unlink	= tahoe_unlink,
   .read		= tahoe_read,
+  .write	= tahoe_write,
+  .flush	= tahoe_flush,
   .readdir	= tahoe_readdir,
+  .mkdir	= tahoe_mkdir,
+  .rmdir	= tahoe_rmdir,
+  .statfs	= tahoe_statfs,
 };
 
-#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
-static const struct fuse_opt tahoefs_opts[] = {
-  TAHOEFS_OPT("-t %s",		tahoe_dir),
-  TAHOEFS_OPT("--tahoe-dir-%s",	tahoe_dir),
-  TAHOEFS_OPT("-r %s",		root_cap),
-  TAHOEFS_OPT("--root-cap-%s",	root_cap),
-  TAHOEFS_OPT("-s %s",		webapi_server),
-  TAHOEFS_OPT("--server=%s",	webapi_server),
-  TAHOEFS_OPT("-p %s",		webapi_port),
-  TAHOEFS_OPT("--port=%s",	webapi_port),
-  TAHOEFS_OPT("-c %s",		filecache_dir),
-  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
-  FUSE_OPT_END
-};
-
-static int tahoe_getattr(const char *path, struct stat *stbufp)
+static int
+tahoe_getattr(const char *path, struct stat *statp)
 {
+  int errcode = 0;
   tahoefs_stat_t tstat;
   memset(&tstat, 0, sizeof(tahoefs_stat_t));
-  if (filecache_getattr(path, &tstat) == -1) {
-    warnx("failed to get file infor of %s.", path);
+  errcode = filecache_getattr(path, &tstat);
+  if (errcode) {
+    warnx("failed to get file info of %s.", path);
+    return (-errcode);
+  }
+
+  if (tahoefs_tstat_to_stat(&tstat, statp) == -1) {
+    warnx("failed to convert tahoefs_stat_t{} to stat{}.");
     return (-ENOENT);
   }
 
-  /* fill the struct stat{} structure. */
-  switch (tstat.type) {
-  case TAHOEFS_STAT_TYPE_DIRNODE:
-    stbufp->st_mode = S_IFDIR | 0700;
-    /* XXX we have no idea about the directory size. */
-    stbufp->st_size = 4096;
-    break;
-  case TAHOEFS_STAT_TYPE_FILENODE:
-    stbufp->st_mode = S_IFREG | 0600;
-    stbufp->st_size = tstat.size;
-    break;
-  default:
-    warnx("unknown tahoefs node type %d.", tstat.type);
-    return (-ENOENT);
-  }
-
-  /* # of hard links. */
-  stbufp->st_nlink = 1;
-
-  /* uid and gid. */
-  stbufp->st_uid = getuid();
-  stbufp->st_gid = getgid();
-
-  /* # of 512B blocks allocated.  does it make any sense to set it? */
-  stbufp->st_blocks = 0;
-
-  /* timestamps. */
-  stbufp->st_ctime = stbufp->st_atime = stbufp->st_mtime
-    = tstat.link_modification_time;
-
-  return (0);
-}
-
-static int tahoe_open(const char *path, struct fuse_file_info *fi)
-{
-  if (fi->flags & (O_WRONLY|O_RDWR|O_APPEND|O_CREAT|O_TRUNC)) {
-    return (-EPERM);
-  }
-
-  struct stat stbuf;
-  memset(&stbuf, 0, sizeof(struct stat));
-  if (tahoe_getattr(path, &stbuf) == -1) {
-    /* cannot get attribute of the file. */
-    return (-ENOENT);
+  /* mutable files don't have size information. */
+  if (tstat.mutable && tstat.type == TAHOEFS_STAT_TYPE_FILENODE) {
+    errcode = 0;
+    size_t real_size;
+    errcode = filecache_get_real_size(path, &real_size);
+    if (errcode) {
+      warnx("failed to get the size of the mutable file %s.", path);
+      return (-errcode);
+    }
+    statp->st_size = real_size;
   }
 
   return (0);
 }
 
-static int tahoe_read(const char *path, char *buf, size_t size,
-		      off_t offset, struct fuse_file_info *fi)
+static int
+tahoe_open(const char *path, struct fuse_file_info *fi)
 {
-  int read = filecache_read(path, buf, size, offset);
-  if (read == -1) {
+  int errcode = 0;
+  errcode = filecache_open(path, fi->flags);
+  if (errcode) {
+    warnx("failed to open a file %s", path);
+    return (-errcode);
+  }
+
+  return (0);
+}
+
+static int
+tahoe_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+{
+  int errcode = 0;
+  errcode = filecache_create(path, mode);
+  if (errcode) {
+    warnx("failed to create a file %s.", path);
+    return (-errcode);
+  }
+
+  return (0);
+}
+
+static int
+tahoe_unlink(const char *path)
+{
+  int errcode = 0;
+  errcode = filecache_unlink(path);
+  if (errcode) {
+    warnx("failed to unlink file %s.", path);
+    return (-errcode);
+  }
+
+  return (0);
+}
+
+static int
+tahoe_read(const char *path, char *buf, size_t size, off_t offset,
+	   struct fuse_file_info *fi)
+{
+  int nread = filecache_read(path, buf, size, offset, fi->flags);
+  if (nread == -1) {
     warnx("read %ld bytes at %ld from %s failed.", size, offset, path);
     return (-1);
   }
 
-  return (read);
+  return (nread);
+}
+
+static int
+tahoe_write(const char *path, const char *buf, size_t size, off_t offset,
+	    struct fuse_file_info *fi)
+{
+  int nwritten = filecache_write(path, buf, size, offset, fi->flags);
+  if (nwritten == -1) {
+    warnx("write %ld bytes at %ld to %s failed", size, offset, path);
+    return (-1);
+  }
+
+  return (nwritten);
+}
+
+static int
+tahoe_flush(const char *path, struct fuse_file_info *fi)
+{
+  int errcode = 0;
+  errcode = filecache_flush(path, fi->flags);
+  if (errcode) {
+    warnx("failed to flush modified contents of %s", path);
+    return (-errcode);
+  }
+
+  return (0);
 }
 
 static int
@@ -173,7 +219,7 @@ tahoe_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 				 tahoe_readdir_callback) == -1) {
     warnx("failed to iterate child nodes of %s.", path);
     free(infop);
-    return (-1);
+    return (-EIO);
   }
 
   /* free the memory which keeps the HTTP response body. */
@@ -187,23 +233,68 @@ tahoe_readdir_callback(tahoefs_readdir_baton_t *batonp)
 {
   assert(batonp != NULL);
 
-#if 0  
   /* convert the JSON data to tahoefs metadata. */
-  tahoefs_metadata_t metadata;
-  memset(&metadata, 0, sizeof (tahoefs_metadata_t));
-  if (json_stub_json_to_metadata(batonp->infop, &metadata) == -1) {
-    warnx("failed to convert JSON data to tahoefs metadata.");
+  tahoefs_stat_t tstat;
+  memset(&tstat, 0, sizeof(tahoefs_stat_t));
+  if (json_stub_jsonstring_to_tstat(batonp->infop, &tstat) == -1) {
+    warnx("failed to convert JSON stat data to tahoefs stat.");
     return (-1);
   }
-  /* XXX convert metadata to struct stat. */
-#endif
+
+  struct stat stat;
+  memset(&stat, 0, sizeof(struct stat));
+  if (tahoefs_tstat_to_stat(&tstat, &stat) == -1) {
+    warnx("failed to convert tahoefs_stat_t{} to stat{}.");
+    return (-1);
+  }
 
   fuse_fill_dir_t filler = (fuse_fill_dir_t)batonp->fillerp;
-  if (filler(batonp->nodename_listp, batonp->nodename,
-		     NULL /* XXX struct stat */, 0) == 1) {
+  if (filler(batonp->nodename_listp, batonp->nodename, &stat, 0) == 1) {
     warnx("failed to fill directory list buffer.");
     return (-1);
   };
+
+  return (0);
+}
+
+static int
+tahoe_mkdir(const char *path, mode_t mode)
+{
+  int errcode = 0;
+  mode_t tahoe_mode = S_IFDIR|S_IRWXU;
+  errcode = filecache_mkdir(path, tahoe_mode);
+  if (errcode) {
+    warnx("failed to create a directory %s", path);
+    return (-errcode);
+  }
+
+  return (0);
+}
+
+static int
+tahoe_rmdir(const char *path)
+{
+  int errcode = 0;
+  errcode = filecache_rmdir(path);
+  if (errcode) {
+    warnx("failed to remove a directory %s", path);
+    return (-errcode);
+  }
+
+  return (0);
+}
+
+int
+tahoe_statfs(const char *path, struct statvfs *statvfsp)
+{
+  memset(statvfsp, 0, sizeof(struct statvfs));
+  statvfsp->f_bsize = 512;
+  statvfsp->f_frsize = statvfsp->f_bsize;
+  statvfsp->f_blocks = 1024 * 1024;
+  statvfsp->f_bfree = statvfsp->f_blocks;
+  statvfsp->f_bavail = statvfsp->f_blocks;
+  statvfsp->f_flag = ST_NOSUID;
+  statvfsp->f_namemax = 1024;
 
   return (0);
 }
@@ -226,7 +317,76 @@ tahoe_destroy(void *dummy)
   }
 }
 
-const char *
+static int
+tahoefs_tstat_to_stat(const tahoefs_stat_t *tstatp, struct stat *statp)
+{
+  assert(tstatp != NULL);
+  assert(statp != NULL);
+
+  /* node type and size. */
+  switch (tstatp->type) {
+  case TAHOEFS_STAT_TYPE_FILENODE:
+    statp->st_mode = (S_IFREG|S_IRUSR);
+    statp->st_size = tstatp->size;
+    break;
+  case TAHOEFS_STAT_TYPE_DIRNODE:
+    statp->st_mode = (S_IFDIR|S_IRUSR|S_IXUSR);
+    /* XXX we have no idea about the size of a directory. */
+    statp->st_size = 0;
+    break;
+  default:
+    warn("unknown tahoefs stat type %d.", tstatp->type);
+    return (-1);
+  }
+
+  /* node modes. */
+  if (tstatp->mutable) {
+    statp->st_mode = (statp->st_mode|S_IWUSR);
+  }
+
+  /* # of hard links. */
+  statp->st_nlink = 1;
+
+  /* uid and gid. */
+  statp->st_uid = getuid();
+  statp->st_gid = getgid();
+
+  /* # of 512B blocks allocated.  does it make any sense to set it? */
+  statp->st_blocks = 0;
+
+  /* timestamps. */
+  statp->st_atime = statp->st_ctime = statp->st_mtime
+    = tstatp->link_modification_time;
+
+  return (0);
+}
+
+static void
+tahoefs_tstat_print(const tahoefs_stat_t *tstatp)
+{
+  if (config.debug) {
+    printf("tahoe_stat_t (%p)\n", tstatp);
+    switch (tstatp->type) {
+    case TAHOEFS_STAT_TYPE_DIRNODE:
+      printf("  type: directory\n");
+      break;
+    case TAHOEFS_STAT_TYPE_FILENODE:
+      printf("  type: file\n");
+      break;
+    default:
+      printf("  type: unknown\n");
+    }
+    printf("  ro_uri: %s\n", tstatp->ro_uri);
+    printf("  verify_uri: %s\n", tstatp->verify_uri);
+    printf("  rw_uri: %s\n", tstatp->rw_uri);
+    printf("  size: %ld\n", tstatp->size);
+    printf("  mutable: %d\n", tstatp->mutable);
+    printf("  link_cr_time: %f\n", tstatp->link_creation_time);
+    printf("  link_mo_time: %f\n", tstatp->link_modification_time);
+  }
+}
+
+static const char *
 tahoe_default_root_cap(void)
 {
   assert(config.tahoe_dir != NULL);
@@ -282,7 +442,71 @@ tahoe_default_root_cap(void)
   return (NULL);
 }
 
-int main(int argc, char *argv[])
+enum {
+  OPTKEY_DEBUG,
+  OPTKEY_HELP
+};
+static int
+tahoefs_opt_proc(void *data, const char *arg, int key,
+		 struct fuse_args *outargs)
+{
+  switch (key) {
+  case OPTKEY_DEBUG:
+    config.debug = 1;
+    break;
+
+  case OPTKEY_HELP:
+    tahoefs_usage(outargs->argv[0]);
+    fuse_opt_add_arg(outargs, "-ho");
+    exit(1);
+  }
+  return (1);
+}
+
+#define TAHOEFS_OPT(t, p) { t, offsetof(struct tahoefs_global_config, p), 1 }
+static const struct fuse_opt tahoefs_opts[] = {
+  TAHOEFS_OPT("-t %s",		tahoe_dir),
+  TAHOEFS_OPT("--tahoe-dir=%s",	tahoe_dir),
+  TAHOEFS_OPT("-r %s",		root_cap),
+  TAHOEFS_OPT("--root-cap=%s",	root_cap),
+  TAHOEFS_OPT("-s %s",		webapi_server),
+  TAHOEFS_OPT("--server=%s",	webapi_server),
+  TAHOEFS_OPT("-p %s",		webapi_port),
+  TAHOEFS_OPT("--port=%s",	webapi_port),
+  TAHOEFS_OPT("-c %s",		filecache_dir),
+  TAHOEFS_OPT("--cache-dir=%s",	filecache_dir),
+  FUSE_OPT_KEY("-d",            OPTKEY_DEBUG),
+  FUSE_OPT_KEY("-h",		OPTKEY_HELP),
+  FUSE_OPT_KEY("--help",	OPTKEY_HELP),
+  FUSE_OPT_END
+};
+
+static void
+tahoefs_usage(const char *progname)
+{
+  fprintf(stderr,
+"usage: %s mountpoint [options]\n"
+"\n"
+"TAHOEFS options:\n"
+"    -t tahoedir           .tahoe directory (default: .tahoe)\n"
+"    --tahoe-dir=tahoedir  same as '-t tahoedir'\n"
+"    -r rootcap            root_cap URI (default: your 'tahoe:' alias)\n"
+"    --root-cap=rootcap    same as '-r rootcap'\n"
+"    -s server             webapi server address (default: localhost)\n"
+"    --server=server       same as '-s server'\n"
+"    -p port               webapi server port (default: 3456)\n"
+"    --port=port           same as '-p port'\n"
+"    -c cachedir           local cache directory (default: .tahoefs)\n"
+"    --cache-dir=cachedir  same as '-c cachedir'\n"
+"\n"
+"FUSE options:\n"
+"    -d                    enable debug output (implies -f)\n"
+"    -f                    foreground operation\n"
+"\n", progname);
+}
+
+int
+main(int argc, char *argv[])
 {
   memset(&config, 0, sizeof(tahoefs_global_config_t));
   config.tahoe_dir = TAHOE_DEFAULT_DIR;
@@ -291,7 +515,8 @@ int main(int argc, char *argv[])
   config.filecache_dir = TAHOE_DEFAULT_FILECACHE_DIR;
 
   struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-  if (fuse_opt_parse(&args, &config, tahoefs_opts, NULL) == -1) {
+  if (fuse_opt_parse(&args, &config, tahoefs_opts,
+		     tahoefs_opt_proc) == -1) {
     errx(EXIT_FAILURE, "failed to parse options.");
   }
   if (config.root_cap == NULL) {

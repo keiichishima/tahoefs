@@ -1,5 +1,5 @@
 /*
- * Copyright 2010 IIJ Innovation Institute Inc. All rights reserved.
+ * Copyright 2010, 2011 IIJ Innovation Institute Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,6 +32,7 @@ typedef struct tahoefs_global_config {
   const char *webapi_server;
   const char *webapi_port;
   const char *filecache_dir;
+  int debug;
 } tahoefs_global_config_t;
 extern tahoefs_global_config_t config;
 
@@ -46,8 +47,8 @@ typedef struct tahoefs_stat {
   char verify_uri[TAHOEFS_CAPABILITY_SIZE];
   size_t size;
   int mutable;
-  time_t link_creation_time;
-  time_t link_modification_time;
+  double link_creation_time;
+  double link_modification_time;
 } tahoefs_stat_t;
 
 typedef struct tahoefs_readdir_baton {
@@ -56,6 +57,13 @@ typedef struct tahoefs_readdir_baton {
   void *nodename_listp;
   void *fillerp;
 } tahoefs_readdir_baton_t;
+
+#define DEBUG(format) do {		\
+    if (config.debug) printf(format);	\
+  } while (0);
+#define DEBUGV(format, args...) do {		\
+    if (config.debug) printf(format, args);	\
+  } while (0);
 
 #endif
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2010 IIJ Innovation Institute Inc. All rights reserved.
+ * Copyright 2010, 2011 IIJ Innovation Institute Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,7 +28,11 @@
 int http_stub_initialize(void);
 int http_stub_terminate(void);
 int http_stub_get_info(const char *, char **, size_t *);
+int http_stub_create(const char *, const char *, int);
 int http_stub_read_file(const char *, const char *);
+int http_stub_flush(const char *, const char *);
+int http_stub_mkdir(const char *, int);
+int http_stub_unlink_rmdir(const char *);
 
 
 #endif

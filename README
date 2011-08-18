@@ -1,0 +1,110 @@
+/*
+ * Copyright 2010, 2011 IIJ Innovation Institute Inc. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY IIJ INNOVATION INSTITUTE INC. ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL IIJ INNOVATION INSTITUTE INC. OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+============
+INTRODUCTION
+============
+
+The tahoefs program is a FUSE interface implementation written in C
+language for the Tahoe-LAFS filesystem.
+
+
+==========
+LIMITATION
+==========
+
+At this moment, the implementation only support reading files and
+directories.  No write operations are supported.
+
+
+==============
+HOW TO COMPILE
+==============
+
+Install necessary libraries.  The program depends on the following
+libraries.
+
+- FUSE library (http://fuse.sourceforge.net/)
+- CURL library (http://curl.haxx.se/libcurl/)
+- JSON library (http://oss.metaparadigm.com/json-c/)
+
+If you are using MacOS X and using macports, just typing the following
+command will be sufficient.
+
+  # port install macfuse json-c
+
+If you are using Linux, then probably following command will help you.
+
+  # aptitude install libfuse-dev libcurl-dev libjson0-dev libattr1-dev
+
+You also need to set the user_xattr mount option on your filesystem if
+you are using Linux to support extended file attributes to store
+Tahoe-LAFS metadata with local cache files.
+
+Retrieve a copy of the tahoefs project from the repository.
+
+   $ git clone git://github.com/keiichishima/tahoefs.git
+
+Go to the tahoefs directory and just typing make will build the
+program.
+
+
+=====
+USAGE
+=====
+
+Before using the tahoefs program, you must install and run a
+Tahoe-LAFS client system on your host, since the tahoefs program use
+the web-API server running locally.  For detailed instruction of how
+to install and run a Tahoe-LAFS client, please read the installation
+manual distributed with the Tahoe-LAFS program.
+
+After started running your Tahoe-LAFS client, create 'tahoe' alias
+using the tahoe program, if you don't have it yet.  The tahoe program
+is a python script distributed with the original Tahoe-LAFS package.
+The 'tahoe' alias is the default root directory of the tahoefs program
+when no command line option is specified.  For example, the following
+command will create the 'tahoe' alias.
+
+  $ tahoe create-alias tahoe
+
+Once you have set up your Tahoe-LAFS client, create a mount point
+somewhere in your local filesystem, and type as follows.
+
+  $ tahoefs MOUNTPOINT
+
+If everything goes well, you can now access your Tahoe-LAFS directory
+under the MOUNTPOINT directory.
+
+There are some command line options to change the behavior of the
+tahoefs program.  Providing the '-h' option to the tahoefs program
+will show you available options.
+
+
+====
+TODO
+====
+
+- make cache management smarter.
+- support offline operation.
