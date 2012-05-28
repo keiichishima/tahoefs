@@ -390,7 +390,7 @@ http_stub_mkdir(const char *path, int ismutable)
   response.datap = malloc(1);
   response.size = 0;
   if (http_stub_put(tahoe_url, &response) == -1) {
-    warnx("failed to issue a PUT request for URL %s (%s)", tahoe_url);
+    warnx("failed to issue a PUT request for URL %s", tahoe_url);
     return (-1);
   }
 
@@ -426,7 +426,7 @@ http_stub_put(const char *url, http_stub_writefunc_baton_t *responsep)
 
   ret = curl_easy_setopt(curl_handle, CURLOPT_INFILESIZE, 0);
   if (ret != CURLE_OK) {
-    warnx("failed to set filesize 0. (CURL: %s)", url, curl_easy_strerror(ret));
+    warnx("failed to set filesize 0 %s. (CURL: %s)", url, curl_easy_strerror(ret));
     curl_easy_cleanup(curl_handle);
     return (-1);
   }
@@ -499,7 +499,7 @@ http_stub_delete(const char *url)
 
   ret = curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "DELETE");
   if (ret != CURLE_OK) {
-    warnx("failed to set DELETE operation. (CURL: %s)", url,
+    warnx("failed to set DELETE operation %s. (CURL: %s)", url,
 	  curl_easy_strerror(ret));
     curl_easy_cleanup(curl_handle);
     return (-1);
